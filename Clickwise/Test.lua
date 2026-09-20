@@ -345,6 +345,11 @@ function Test:Cast(u, spell)
 	local base = (spell:gsub("%s*%(.-%)$", "")) -- "Name(Rank 3)" -> "Name"
 	CW:Print((L["Test: your click casts %s on %s."]):format(spell, u.name))
 	local changed = false
+	if u.dead and base == CW.ClickCast:RezSpell() then
+		-- a resurrection: back on their feet with a third of the health
+		u.dead, u.ghost, u.health = false, false, floor(u.healthMax * 0.35)
+		CW.UnitFrame:UpdateGUID(u.guid)
+	end
 	local key, slot = CW.Buffs:SpellGroup(base)
 	if key then
 		for i = #u.buffs, 1, -1 do

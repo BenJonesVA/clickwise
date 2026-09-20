@@ -34,6 +34,7 @@ local KIND_ITEMS = {
 	{value = "buff", label = L["Buff group"]},
 	{value = "assigned", label = L["Assigned buff"]},
 	{value = "cure", label = L["Cure debuff"]},
+	{value = "rez", label = L["Resurrect"]},
 	{value = "macro", label = L["Macro"]},
 	{value = "target", label = L["Target unit"]},
 	{value = "focus", label = L["Set focus"]},
@@ -47,9 +48,10 @@ local WHEN_ORDER = {"ANY", "OOC", "COMBAT"}
 local WHEN_LABEL = {ANY = L["Any time"], OOC = L["Out of combat"], COMBAT = L["In combat"]}
 local WHEN_TAG = {OOC = L["ooc"], COMBAT = L["combat"]} -- short marker in the binding list
 local function IsCast(kind) return kind == "spell" or kind == "buff" or kind == "assigned" end
--- The `when` domain a binding of this kind lives in ("CURE" is the smart cure click's own, see ClickCast.lua).
+-- The `when` domain a binding of this kind lives in ("CURE" / "REZ" are the smart clicks' own, see ClickCast.lua).
 local function WhenFor(kind, when)
 	if kind == "cure" then return "CURE" end
+	if kind == "rez" then return "REZ" end
 	return IsCast(kind) and when or "ANY"
 end
 
@@ -413,6 +415,13 @@ local function Build(page)
 		"GameFontHighlightSmall")
 	cureSection[#cureSection]:SetWidth(290)
 
+	-- resurrect section ------------------------------------------------------------
+	local rezSection = {}
+	rezSection[#rezSection + 1] = Config.NewLabel(page, FORM_X, -112,
+		L["Casts your resurrection on a dead or released member. Only while you are out of combat: on a living member, and in combat, the click does your other binding on the same click (a left click still targets)."],
+		"GameFontHighlightSmall")
+	rezSection[#rezSection]:SetWidth(290)
+
 	-- assigned buff section ------------------------------------------------------
 	local assignedSection = {}
 	assignedSection[#assignedSection + 1] = Config.NewLabel(page, FORM_X, -112,
@@ -432,6 +441,7 @@ local function Build(page)
 		ShowSection(buffSection, S.kind == "buff")
 		ShowSection(assignedSection, S.kind == "assigned")
 		ShowSection(cureSection, S.kind == "cure")
+		ShowSection(rezSection, S.kind == "rez")
 		-- an assigned buff is meant for out of combat (heals are what you want during the fight)
 		if not S.whenChosen then
 			S.when = (S.kind == "assigned") and "OOC" or "ANY"
@@ -515,10 +525,23 @@ local function Build(page)
 			else
 				lines[#lines + 1] = "|cffffcc00" .. L["Nothing else is bound to this click, so it does nothing in combat. Bind a heal on the same click."] .. "|r"
 			end
+		elseif S.kind == "rez" then
+			local spell = CW.ClickCast:RezSpell()
+			if spell then
+				lines[#lines + 1] = (L["Casts: %s"]):format(spell)
+			else
+				lines[#lines + 1] = "|cffffcc00" .. L["You know no resurrection spell - this does nothing until you do."] .. "|r"
+			end
+			local other = ClickCast:GetBinding(modifier, S.button, "COMBAT") or ClickCast:GetBinding(modifier, S.button, "ANY")
+			if other then
+				lines[#lines + 1] = (L["Otherwise this click: %s"]):format(ActionText(other))
+			elseif S.button == "1" then
+				lines[#lines + 1] = L["Otherwise this click targets the unit."]
+			end
 		elseif S.kind == "macro" and Trim(macroBox:GetText()) == "" then
 			lines[#lines + 1] = "|cffff7070" .. L["Enter the macro text."] .. "|r"
 		end
-		if modifier == "" and (S.button == "1" or S.button == "2") and S.kind ~= "cure" then
+		if modifier == "" and (S.button == "1" or S.button == "2") and S.kind ~= "cure" and S.kind ~= "rez" then
 			lines[#lines + 1] = "|cffffcc00" .. L["This overrides the built-in target / menu click."] .. "|r"
 		end
 		if InCombatLockdown() then
@@ -546,7 +569,7 @@ local function Build(page)
 		S.button = b.button
 		S.kind = b.type
 		S.group = b.group or CW.BuffGroups[1].key
-		S.when, S.whenChosen = (b.type == "cure") and "ANY" or ClickCast.WhenOf(b), true
+		S.when, S.whenChosen = (b.type == "cure" or b.type == "rez") and "ANY" or ClickCast.WhenOf(b), true
 		S.selectedKey = BindingKey(b)
 		spellBox:SetText(b.spell or "")
 		rankBox:SetText(b.rank and (b.rank:match("%d+") or "") or "")

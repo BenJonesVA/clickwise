@@ -361,6 +361,7 @@ function UnitFrame:UpdateHealth(btn)
 		btn.cwOffline, btn.cwDead = offline, dead
 		CW.Buffs:Paint(btn) -- missing-buff icons grey out for dead / offline units
 		if CW.Debuffs then CW.Debuffs:UpdateButton(btn) end -- and the debuff border goes
+		CW.ClickCast:UpdateRez(btn) -- and the resurrect click follows the dead state
 	end
 
 	btn.health:SetMinMaxValues(0, max)

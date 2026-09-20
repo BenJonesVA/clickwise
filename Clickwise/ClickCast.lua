@@ -11,6 +11,11 @@
 -- of its own. It only acts while the PLAYER is out of combat (the macro's [nocombat]): the pick is written into
 -- the macro out of combat and frozen once combat starts, and a frozen cure would still be there after the
 -- debuff is gone, taking the click away from the heal for the rest of the fight. In combat use a plain spell binding.
+-- type "rez" is the same kind of smart click for the dead: while the unit is dead (or a ghost) and the player
+-- knows the class resurrection (Resurrection, Redemption, Ancestral Spirit, Revive) it casts that; a living
+-- unit gets the click's other binding (a plain left click still targets). Its own `when` domain, "REZ", and
+-- out of combat only, for the same reason as the cure. Deaths mostly happen in combat, when nothing can be
+-- rewritten: the pick is written as soon as the fight ends.
 -- Bindings become exact-match secure attributes ("shift-type1", "shift-spell1", ...) on every
 -- unit button; exact matches beat the "*type1"/"*type2" wildcard defaults from templates.xml,
 -- so left = target and right = menu keep working for every unbound modifier combination.
@@ -40,6 +45,8 @@ CW.ClickCast = ClickCast
 local L = LibStub("AceLocale-3.0"):GetLocale("Clickwise")
 local pairs, ipairs, tinsert = pairs, ipairs, table.insert
 local InCombatLockdown, UnitAffectingCombat = InCombatLockdown, CW.API.UnitAffectingCombat -- (the API's: see Compat.lua)
+local UnitIsConnected, UnitIsDeadOrGhost = CW.API.UnitIsConnected, CW.API.UnitIsDeadOrGhost
+local GetSpellInfo = GetSpellInfo
 
 local BUTTON_NAMES = {["1"] = "Left", ["2"] = "Right", ["3"] = "Middle", ["4"] = "Button4", ["5"] = "Button5"}
 local COMBAT_POLL = 0.5 -- seconds between reads of every frame's unit combat state (only while a gated binding exists)
@@ -48,9 +55,13 @@ local COMBAT_POLL = 0.5 -- seconds between reads of every frame's unit combat st
 local CASTS = {spell = true, buff = true, assigned = true}
 local WHEN_TEXT = {OOC = L["Out of combat"], COMBAT = L["In combat"]}
 
--- When the binding fires: "ANY", "OOC" or "COMBAT"; "CURE" for the smart cure click.
+-- The smart clicks: each lives in a `when` domain of its own, beside the ordinary bindings (its fallback).
+local SMART = {cure = "CURE", rez = "REZ"}
+local SMART_DOMAIN = {CURE = true, REZ = true}
+
+-- When the binding fires: "ANY", "OOC" or "COMBAT"; "CURE" / "REZ" for the smart clicks.
 local function WhenOf(b)
-	if b.type == "cure" then return "CURE" end
+	if SMART[b.type] then return SMART[b.type] end
 	if not CASTS[b.type] then return "ANY" end
 	local w = b.when
 	if w == "ANY" or w == "OOC" or w == "COMBAT" then return w end
@@ -139,12 +150,12 @@ local function SameKey(b, modifier, button)
 	return (b.modifier or "") == modifier and b.button == button
 end
 
--- Two bindings on the same click collide unless one is "OOC" and the other "COMBAT". A cure click only
--- collides with another cure click: it lives beside the ordinary bindings, which are its fallback.
+-- Two bindings on the same click collide unless one is "OOC" and the other "COMBAT". A smart click only
+-- collides with another of its own kind: it lives beside the ordinary bindings, which are its fallback.
 local function Collides(b, modifier, button, when)
 	if not SameKey(b, modifier, button) then return false end
 	local w = WhenOf(b)
-	if w == "CURE" or when == "CURE" then return w == when end
+	if SMART_DOMAIN[w] or SMART_DOMAIN[when] then return w == when end
 	return w == when or w == "ANY" or when == "ANY"
 end
 
@@ -213,7 +224,7 @@ end
 function ClickCast:DescribeBindings()
 	local lines = {}
 	for _, b in ipairs(self:GetBindings()) do
-		local what = b.spell or b.macro or (b.group and ("buff group " .. b.group)) or (b.type == "cure" and "cure debuff") or b.type
+		local what = b.spell or b.macro or (b.group and ("buff group " .. b.group)) or (b.type == "cure" and "cure debuff") or (b.type == "rez" and "resurrect") or b.type
 		if b.rank then what = what .. " (" .. b.rank .. ")" end
 		local when = WHEN_TEXT[WhenOf(b)]
 		if when then what = what .. " [" .. when .. "]" end
@@ -245,6 +256,8 @@ local function CastName(b, btn)
 		return btn.cwAssignedSpell -- picked per unit by Buffs.lua; nil for a unit no rule applies to
 	elseif b.type == "cure" then
 		return btn.cwCureSpell -- picked per unit by Debuffs.lua; nil while the unit has nothing the player can remove
+	elseif b.type == "rez" then
+		return btn.cwRezSpell -- picked per unit below (UpdateRez); nil while the unit is alive
 	end
 end
 
@@ -260,7 +273,7 @@ end
 local BUTTON_ORDER = {"1", "2", "3", "4", "5"}
 local BUTTON_TIP = {["1"] = L["Left"], ["2"] = L["Right"], ["3"] = L["Middle"], ["4"] = L["Button 4"], ["5"] = L["Button 5"]}
 local DEFAULT_CLICK = {["1"] = L["Target"], ["2"] = L["Menu"]} -- the "*type1" / "*type2" wildcard defaults of templates.xml
-local KIND_TEXT = {target = L["Target"], focus = L["Focus"], assist = L["Assist"], macro = L["Macro"], cure = L["Cure debuff"]}
+local KIND_TEXT = {target = L["Target"], focus = L["Focus"], assist = L["Assist"], macro = L["Macro"], cure = L["Cure debuff"], rez = L["Resurrect"]}
 
 -- Lines for the hover tooltip: what each click does with this modifier prefix ("" or "alt-ctrl-shift-") held.
 -- Each line is {left = button, right = action, r, g, b}. Second result: whether bindings on other modifier
@@ -286,8 +299,8 @@ function ClickCast:TooltipLines(btn, modifier)
 		if list then
 			for _, b in ipairs(list) do
 				local what = CastName(b, btn)
-				if b.type == "cure" then
-					what = L["Cure debuff"] .. (what and (": " .. what) or "")
+				if SMART[b.type] then
+					what = KIND_TEXT[b.type] .. (what and (": " .. what) or "")
 				elseif not what then
 					what = (b.type == "assigned" and L["Assigned buff"]) or KIND_TEXT[b.type] or b.group or b.spell or "?"
 				end
@@ -307,10 +320,10 @@ local function UnitFights(btn)
 	return (btn.unit and UnitAffectingCombat(btn.unit)) and true or false
 end
 
--- Whether any binding of the list needs the macro path: a casting binding that is gated, an assigned one or a cure.
+-- Whether any binding of the list needs the macro path: a casting binding that is gated, an assigned one or a smart click.
 local function NeedsMacro(items)
 	for _, b in ipairs(items) do
-		if b.type == "assigned" or b.type == "cure" or (CASTS[b.type] and WhenOf(b) ~= "ANY") then return true end
+		if b.type == "assigned" or SMART[b.type] or (CASTS[b.type] and WhenOf(b) ~= "ANY") then return true end
 	end
 	return false
 end
@@ -320,12 +333,12 @@ end
 local function BuildClickMacro(btn, items, button)
 	local fights = btn.cwUnitCombat
 	local gated, open = {}, {}
-	local cure
+	local smart = {}
 	for _, b in ipairs(items) do
 		local spell, unit = CastName(b, btn), b.unit or btn.unit
-		if b.type == "cure" then
+		if SMART[b.type] then
 			-- first in the macro, and only while the player is out of combat (see the header comment)
-			if spell and unit then cure = ("[nocombat,target=%s] %s"):format(unit, spell) end
+			if spell and unit then smart[#smart + 1] = ("[nocombat,target=%s] %s"):format(unit, spell) end
 		elseif spell and unit then
 			local when, cond = WhenOf(b), ""
 			local skip = false
@@ -342,23 +355,23 @@ local function BuildClickMacro(btn, items, button)
 	end
 	-- an unconditional clause matches whatever follows it, so it goes last
 	for _, clause in ipairs(open) do gated[#gated + 1] = clause end
-	if cure then table.insert(gated, 1, cure) end
+	for i = #smart, 1, -1 do table.insert(gated, 1, smart[i]) end
 	if #gated == 0 then return nil end
 	local text = "/cast " .. table.concat(gated, "; ")
-	-- a left click that only has the cure keeps targeting the unit once combat starts (the macro replaced
+	-- a left click that only has smart clauses keeps targeting the unit once combat starts (the macro replaced
 	-- the default target click); other buttons have nothing to fall back to and the editor says so
 	-- [belief] `/target [combat] <unit>` is understood by a secure macro; if not, the line is a harmless no-op
-	if cure and #gated == 1 and button == "1" and btn.unit then
+	if #smart > 0 and #smart == #gated and button == "1" and btn.unit then
 		text = text .. "\n/target [combat] " .. btn.unit
 	end
 	return text
 end
 
 -- The parts of a button's attributes that follow live state: the unit it shows, whether that unit is
--- fighting, the buff the assignment rules picked for it and the spell that removes its debuff.
+-- fighting, the buff the assignment rules picked for it, the spell that removes its debuff and the rez.
 local function Signature(btn)
 	return (btn.unit or "") .. "|" .. (btn.cwUnitCombat and "1" or "0") .. "|" .. (btn.cwAssignedSpell or "")
-		.. "|" .. (btn.cwCureSpell or "")
+		.. "|" .. (btn.cwCureSpell or "") .. "|" .. (btn.cwRezSpell or "")
 end
 
 -- A binding that does not depend on live state: plain secure attributes that follow the button's own unit.
@@ -436,12 +449,60 @@ function ClickCast:HasGatedBinding()
 	return false
 end
 
--- Does any binding's attribute depend on live state (unit, unit combat, assigned pick, cure pick)?
+-- Does any binding's attribute depend on live state (unit, unit combat, assigned pick, cure / rez pick)?
 function ClickCast:IsDynamic()
 	for _, b in ipairs(self:GetBindings()) do
-		if b.type == "assigned" or b.type == "cure" or (CASTS[b.type] and WhenOf(b) ~= "ANY") then return true end
+		if b.type == "assigned" or SMART[b.type] or (CASTS[b.type] and WhenOf(b) ~= "ANY") then return true end
 	end
 	return false
+end
+
+-- The class resurrection: {spell id, English name}. Not Rebirth (combat only, and the smart clicks are out of
+-- combat only) and not the Death Knight's Raise Ally or the Warlock's Soulstone, which are no resurrection.
+-- [belief] the ids and names, from game knowledge (Range.lua uses the same ids for its dead-unit range check).
+local REZ = {
+	PRIEST = {2006, "Resurrection"},
+	PALADIN = {7328, "Redemption"},
+	SHAMAN = {2008, "Ancestral Spirit"},
+	DRUID = {50769, "Revive"},
+}
+local rezSpell -- the spell the player knows, or nil
+
+function ClickCast:RebuildRez()
+	rezSpell = nil
+	local entry = REZ[ClassKey()]
+	if entry then
+		local name = GetSpellInfo(entry[1]) or entry[2]
+		if CW.KnowsSpell(name) then rezSpell = name end
+	end
+end
+
+function ClickCast:RezSpell()
+	return rezSpell
+end
+
+-- Is there a smart resurrect click?
+function ClickCast:HasRezBinding()
+	for _, b in ipairs(self:GetBindings()) do
+		if b.type == "rez" then return true end
+	end
+	return false
+end
+
+local function RezPick(btn)
+	local unit = btn.unit
+	if rezSpell and unit and UnitIsConnected(unit) and UnitIsDeadOrGhost(unit) and ClickCast:HasRezBinding() then
+		return rezSpell
+	end
+end
+
+-- Called when a unit's dead / offline state changed (UnitFrame:UpdateHealth): the click is rewritten out of combat.
+function ClickCast:UpdateRez(btn)
+	local pick = RezPick(btn)
+	if btn.cwRezSpell ~= pick then
+		btn.cwRezSpell = pick
+		self:Sync(btn)
+	end
 end
 
 -- Is there a smart cure click? (Debuffs.lua then works out each unit's cure spell even with the highlight off.)
@@ -498,16 +559,19 @@ function ClickCast:ApplyAll()
 		return
 	end
 	local gated = self:HasGatedBinding()
+	self:RebuildRez() -- the spellbook may have changed
 	if CW.Debuffs and self:HasCureBinding() then
 		CW.Debuffs:RefreshAll() -- every button's cure pick must be current before its click is written
 	end
 	for btn in pairs(CW.UnitFrame.frames) do
+		btn.cwRezSpell = RezPick(btn) -- likewise the rez pick
 		btn.cwUnitCombat = gated and UnitFights(btn) or false -- read fresh: the poll may not have run yet
 		self:ApplyToButton(btn)
 	end
 end
 
 function ClickCast:OnEnable()
+	self:RebuildRez()
 	if MigrateBindings() then
 		self:ApplyAll() -- buttons may already exist and were set up from the template
 	end

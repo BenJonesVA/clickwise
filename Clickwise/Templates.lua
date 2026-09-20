@@ -15,6 +15,12 @@ local function bind(modifier, button, spell)
 	return {modifier = modifier, button = button, type = "spell", spell = spell}
 end
 
+-- the smart resurrect click (ClickCast.lua): a plain left click on a dead member out of combat; living members
+-- still get the default target click
+local function rez()
+	return {modifier = "", button = "1", type = "rez"}
+end
+
 CW.ClassTemplates = {
 	PRIEST = {
 		bind("shift-", "1", "Flash Heal"),
@@ -25,6 +31,7 @@ CW.ClassTemplates = {
 		bind("alt-", "2", "Abolish Disease"),
 		bind("", "3", "Prayer of Mending"),
 		bind("shift-", "3", "Resurrection"),
+		rez(),
 	},
 	PALADIN = {
 		bind("shift-", "1", "Flash of Light"),
@@ -34,6 +41,7 @@ CW.ClassTemplates = {
 		bind("alt-", "1", "Cleanse"),
 		bind("alt-", "2", "Sacred Shield"),
 		bind("shift-", "3", "Redemption"),
+		rez(),
 	},
 	DRUID = {
 		bind("shift-", "1", "Nourish"),
@@ -45,6 +53,7 @@ CW.ClassTemplates = {
 		bind("", "3", "Lifebloom"),
 		bind("alt-", "3", "Swiftmend"),
 		bind("shift-", "3", "Revive"),
+		rez(),
 	},
 	SHAMAN = {
 		bind("shift-", "1", "Lesser Healing Wave"),
@@ -55,6 +64,7 @@ CW.ClassTemplates = {
 		bind("alt-", "2", "Cleanse Spirit"),
 		bind("", "3", "Earth Shield"),
 		bind("shift-", "3", "Ancestral Spirit"),
+		rez(),
 	},
 	MAGE = {
 		bind("alt-", "1", "Remove Curse"),

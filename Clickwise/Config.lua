@@ -181,13 +181,14 @@ local function BuildGeneral(page)
 	Config.NewDropdown(page, 430, -148, 110, TOOLTIP_MODES,
 		function() return Config.Get({"tooltip", "mode"}) end,
 		function(value) Config.Set({"tooltip", "mode"}, value) end)
-	Config.NewCheck(page, 336, -184, L["Show click bindings"], {"tooltip", "bindings"})
-	Config.NewCheck(page, 480, -184, L["Show buff status"], {"tooltip", "buffs"})
+	-- one above the other: side by side the first label ran into the second box
+	Config.NewCheck(page, 336, -180, L["Show click bindings"], {"tooltip", "bindings"})
+	Config.NewCheck(page, 336, -206, L["Show buff status"], {"tooltip", "buffs"})
 
 	Config.NewButton(page, 8, -170, 150, L["Reset position"], function()
 		CW.Frames:ResetPosition()
 	end)
-	local tip = Config.NewLabel(page, 8, -210, L["Tip: unlock the frames, then drag the blue 'Clickwise' tab above them."], "GameFontHighlightSmall")
+	local tip = Config.NewLabel(page, 8, -236,L["Tip: unlock the frames, then drag the blue 'Clickwise' tab above them."], "GameFontHighlightSmall")
 	tip:SetWidth(600)
 
 	-- health bars change color in combat (CombatColor.lua)

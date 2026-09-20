@@ -204,6 +204,11 @@ L["Otherwise this click: %s"] = true
 L["Removes: %s"] = true
 L["You know no spell that removes debuffs - this does nothing until you do."] = true
 
+-- Resurrect click
+L["Casts your resurrection on a dead or released member. Only while you are out of combat: on a living member, and in combat, the click does your other binding on the same click (a left click still targets)."] = true
+L["Resurrect"] = true
+L["You know no resurrection spell - this does nothing until you do."] = true
+
 -- Test mode (Test.lua)
 L["Test group: the frames are not built yet."] = true
 L["Test group: %d made-up members, shown below your frames. Click one to see what your click would cast. /cw test combat switches combat colors, /cw test off ends it."] = true
