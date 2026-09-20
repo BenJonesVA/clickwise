@@ -35,6 +35,7 @@ local KIND_ITEMS = {
 	{value = "assigned", label = L["Assigned buff"]},
 	{value = "cure", label = L["Cure debuff"]},
 	{value = "rez", label = L["Resurrect"]},
+	{value = "taunt", label = L["Taunt"]},
 	{value = "macro", label = L["Macro"]},
 	{value = "target", label = L["Target unit"]},
 	{value = "focus", label = L["Set focus"]},
@@ -81,6 +82,9 @@ local function ActionText(b)
 		return L["Buff"] .. ": " .. (group and group.label or tostring(b.group))
 	elseif b.type == "macro" then
 		return L["Macro"] .. ": " .. ((b.macro or ""):match("[^\r\n]*"))
+	elseif b.type == "taunt" then
+		local spell = CW.ClickCast:TauntSpell()
+		return L["Taunt"] .. (spell and (": " .. spell) or "")
 	end
 	return KIND_LABEL[b.type] or tostring(b.type)
 end
@@ -422,6 +426,13 @@ local function Build(page)
 		"GameFontHighlightSmall")
 	rezSection[#rezSection]:SetWidth(290)
 
+	-- taunt section ---------------------------------------------------------------
+	local tauntSection = {}
+	tauntSection[#tauntSection + 1] = Config.NewLabel(page, FORM_X, -112,
+		L["Taunts the enemy this member is targeting, with your class's taunt (Taunt, Hand of Reckoning, Dark Command or Growl). Works in combat. A member with no enemy targeted: nothing happens."],
+		"GameFontHighlightSmall")
+	tauntSection[#tauntSection]:SetWidth(290)
+
 	-- assigned buff section ------------------------------------------------------
 	local assignedSection = {}
 	assignedSection[#assignedSection + 1] = Config.NewLabel(page, FORM_X, -112,
@@ -442,6 +453,7 @@ local function Build(page)
 		ShowSection(assignedSection, S.kind == "assigned")
 		ShowSection(cureSection, S.kind == "cure")
 		ShowSection(rezSection, S.kind == "rez")
+		ShowSection(tauntSection, S.kind == "taunt")
 		-- an assigned buff is meant for out of combat (heals are what you want during the fight)
 		if not S.whenChosen then
 			S.when = (S.kind == "assigned") and "OOC" or "ANY"
@@ -503,7 +515,7 @@ local function Build(page)
 			if group and not CW.Buffs:IsAvailable(S.group) then
 				lines[#lines + 1] = "|cffffcc00" .. L["You do not know a spell of this group - the binding will do nothing until you do."] .. "|r"
 			elseif group then
-				lines[#lines + 1] = (L["Casts: %s"]):format(CW.Buffs:GetCastSpell(S.group))
+				lines[#lines + 1] = (L["Casts: %s"]):format(CW.Buffs:GetCastSpell(S.group) or "?")
 			end
 		elseif S.kind == "assigned" then
 			if not CW.Buffs:HasRules() then
@@ -537,6 +549,13 @@ local function Build(page)
 				lines[#lines + 1] = (L["Otherwise this click: %s"]):format(ActionText(other))
 			elseif S.button == "1" then
 				lines[#lines + 1] = L["Otherwise this click targets the unit."]
+			end
+		elseif S.kind == "taunt" then
+			local spell = CW.ClickCast:TauntSpell()
+			if spell then
+				lines[#lines + 1] = (L["Casts: %s"]):format(spell)
+			else
+				lines[#lines + 1] = "|cffffcc00" .. L["You know no taunt spell - this does nothing until you do."] .. "|r"
 			end
 		elseif S.kind == "macro" and Trim(macroBox:GetText()) == "" then
 			lines[#lines + 1] = "|cffff7070" .. L["Enter the macro text."] .. "|r"

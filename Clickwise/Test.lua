@@ -272,6 +272,11 @@ function Test:SetCombat(on, quiet)
 		cc.inCombat = on or (UnitAffectingCombat("player") and true or false)
 		cc:Refresh()
 	end
+	local threat = CW.Threat
+	if threat then
+		threat.inCombat = on or (UnitAffectingCombat("player") and true or false)
+		threat:Refresh()
+	end
 	if not quiet then CW:Print(on and L["Test combat on."] or L["Test combat off."]) end
 end
 
@@ -389,6 +394,8 @@ function Test:Click(btn, mouse)
 		for line in (btn:GetAttribute(prefix .. "macrotext" .. suffix) or ""):gmatch("[^\n]+") do
 			local clauses = line:match("^/cast%s+(.+)$")
 			if clauses then
+				-- an invented unit has no target for [harm,nodead] to test: those two are left out
+				clauses = clauses:gsub(",harm,nodead%]", "]")
 				local ok, action = pcall(SecureCmdOptionParse, clauses) -- picks the clause whose conditions hold now
 				if ok and action and action ~= "" then
 					spell = action
@@ -396,7 +403,9 @@ function Test:Click(btn, mouse)
 				end
 			end
 		end
-		if spell then
+		if spell and spell == CW.ClickCast:TauntSpell() then
+			CW:Print((L["Test: your click casts %s on what %s is targeting."]):format(spell, u.name))
+		elseif spell then
 			self:Cast(u, spell)
 		else
 			CW:Print((L["Test: your click casts nothing on %s right now."]):format(u.name))

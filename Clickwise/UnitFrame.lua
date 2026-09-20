@@ -123,6 +123,8 @@ function UnitFrame:TooltipLines(btn)
 	if btn.cwInRange == false then
 		out[#out + 1] = {left = L["Range"], right = L["Out of range"], r = 1, g = 0.3, b = 0.3}
 	end
+	local threatLine = CW.Threat and CW.Threat:TooltipLine(btn)
+	if threatLine then out[#out + 1] = threatLine end
 
 	if CW.Debuffs then
 		local lines = CW.Debuffs:TooltipLines(btn)
@@ -236,6 +238,7 @@ function UnitFrame:InitButton(btn, demo)
 
 	CW.Buffs:InitButton(btn)
 	if CW.Debuffs then CW.Debuffs:InitButton(btn) end -- nil if this file list is stale (a new .lua file needs a full client restart)
+	if CW.Threat then CW.Threat:InitButton(btn) end
 
 	btn.menu = UnitFrame.ShowMenu
 	btn:SetScript("OnEnter", function(self) UnitFrame:ShowTooltip(self) end)
@@ -330,6 +333,7 @@ function UnitFrame:UpdateButton(btn)
 	CW.Range:UpdateButton(btn)
 	CW.Buffs:UpdateButton(btn)
 	if CW.Debuffs then CW.Debuffs:UpdateButton(btn) end
+	if CW.Threat then CW.Threat:UpdateButton(btn) end -- after the role: only a known healer / damage dealer gets the ring
 end
 
 function UnitFrame:UpdateName(btn)

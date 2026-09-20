@@ -107,8 +107,10 @@ function CombatColor:GetColor(btn, cur, max)
 	end
 	local status = UnitThreatSituation(unit)
 	local scaled
-	if UnitExists("target") and UnitCanAttack("player", "target") then
-		local _, _, pct = UnitDetailedThreatSituation(unit, "target")
+	-- Threat.lua picks the enemy (a healer's target is a party member, so "target" alone is often useless)
+	local mob = CW.Threat and CW.Threat:GetMob() or (UnitExists("target") and UnitCanAttack("player", "target") and "target")
+	if mob then
+		local _, _, pct = UnitDetailedThreatSituation(unit, mob)
 		scaled = pct
 	end
 	return CombatColor.ThreatColor(status, scaled, s.threat)
@@ -123,6 +125,7 @@ end
 
 -- Repaint every bar; run the poll only while it can matter (threat mode, in combat).
 function CombatColor:Refresh()
+	self:UpdateRole() -- (the role setting may have changed)
 	if self.timer then
 		self:CancelTimer(self.timer)
 		self.timer = nil
@@ -134,6 +137,7 @@ function CombatColor:Refresh()
 end
 
 function CombatColor:Poll()
+	if CW.Threat then CW.Threat:RefreshMob() end -- the poll is what notices a new enemy
 	CW.UnitFrame:UpdateAllHealth()
 end
 

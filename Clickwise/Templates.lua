@@ -4,7 +4,7 @@
 -- (templates.xml), so they are not listed here. Entries are CANDIDATES: ClickCast.lua only
 -- applies a spell entry when the player actually knows the spell, so talent-dependent or
 -- misspelled names are harmless. Tank / utility templates (Misdirection, Tricks, taunts,
--- Hand of Salvation, Intervene, ...) arrive with the threat/tank phase.
+-- Hand of Salvation, Intervene, ...) are in, for the four tank classes and the classes that support a tank.
 --
 -- Fields: button "1".."5"; modifier "" or an "alt-ctrl-shift-" prefix; type "spell";
 --         spell = spell name; rank = optional "Rank N" (nil = highest rank).
@@ -21,6 +21,12 @@ local function rez()
 	return {modifier = "", button = "1", type = "rez"}
 end
 
+-- the tank's click (ClickCast.lua): taunts the enemy the clicked member is targeting, with the class's own taunt
+-- (Taunt / Hand of Reckoning / Dark Command / Growl). The same click for every tank class.
+local function taunt()
+	return {modifier = "ctrl-shift-", button = "1", type = "taunt"}
+end
+
 CW.ClassTemplates = {
 	PRIEST = {
 		bind("shift-", "1", "Flash Heal"),
@@ -32,6 +38,8 @@ CW.ClassTemplates = {
 		bind("", "3", "Prayer of Mending"),
 		bind("shift-", "3", "Resurrection"),
 		rez(),
+		bind("alt-", "3", "Pain Suppression"),
+		bind("ctrl-", "3", "Guardian Spirit"),
 	},
 	PALADIN = {
 		bind("shift-", "1", "Flash of Light"),
@@ -42,6 +50,13 @@ CW.ClassTemplates = {
 		bind("alt-", "2", "Sacred Shield"),
 		bind("shift-", "3", "Redemption"),
 		rez(),
+		-- tank and utility (a plain spell binding works in combat)
+		bind("", "3", "Hand of Sacrifice"),
+		bind("ctrl-", "3", "Hand of Protection"),
+		bind("alt-", "3", "Hand of Salvation"),
+		bind("", "4", "Hand of Freedom"),
+		bind("ctrl-shift-", "2", "Righteous Defense"), -- cast on the member: taunts what is attacking them
+		taunt(),
 	},
 	DRUID = {
 		bind("shift-", "1", "Nourish"),
@@ -54,6 +69,9 @@ CW.ClassTemplates = {
 		bind("alt-", "3", "Swiftmend"),
 		bind("shift-", "3", "Revive"),
 		rez(),
+		bind("ctrl-", "3", "Innervate"),
+		bind("ctrl-shift-", "3", "Rebirth"), -- the combat resurrection; the smart rez click is out of combat only
+		taunt(), -- Growl
 	},
 	SHAMAN = {
 		bind("shift-", "1", "Lesser Healing Wave"),
@@ -72,6 +90,18 @@ CW.ClassTemplates = {
 	},
 	DEATHKNIGHT = {
 		bind("shift-", "3", "Raise Ally"),
+		taunt(), -- Dark Command
 	},
-	-- WARRIOR, ROGUE, HUNTER, WARLOCK: target + menu only until the utility phase.
+	WARRIOR = {
+		bind("", "3", "Intervene"),
+		bind("shift-", "3", "Vigilance"),
+		taunt(), -- Taunt
+	},
+	HUNTER = {
+		bind("", "3", "Misdirection"),
+	},
+	ROGUE = {
+		bind("", "3", "Tricks of the Trade"),
+	},
+	-- WARLOCK: target + menu only.
 }

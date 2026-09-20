@@ -10,7 +10,16 @@ local InCombatLockdown = InCombatLockdown
 local pairs, select, unpack, tonumber, tostring = pairs, select, unpack, tonumber, tostring
 
 local defaults = {
+	-- per character (not per profile): one profile for each talent spec, see CW:ApplySpecProfile
+	char = {
+		specProfiles = {enabled = false}, -- [1] / [2] = the profile the character uses in that talent spec
+		roleProfiles = {enabled = false, role = "AUTO"}, -- TANK / HEALER / DAMAGER = the profile for that role; role = "My role" while it is on
+	},
 	profile = {
+		-- the player's own role: AUTO (detected: assigned role, talents) or TANK | HEALER | DAMAGER set by hand.
+		-- A paladin can be either; this is what the role-dependent parts (combat colors, the role icon, the
+		-- assignment rules for "Self"'s role, the aggro rings) go by for the player's own frame.
+		myRole = "AUTO",
 		locked = true,
 		scale = 1,
 		position = {}, -- x/y = absolute top-left in screen units; empty = default anchor (see Frames.lua)
@@ -39,6 +48,11 @@ local defaults = {
 			yellow = 50, -- health: yellow at or below this percentage
 			red = 20, -- health: red below this percentage
 			threat = 80, -- threat: yellow once a unit is this far (percent) toward pulling the enemy
+		},
+		-- aggro border and threat bar (Threat.lua); the warning percentage is combatColor.threat
+		threat = {
+			border = true, -- a ring around a healer / damage dealer who has, or is about to take, the enemy
+			bar = true,    -- a thin bar along the bottom edge: how far the unit is toward pulling
 		},
 		-- debuff highlight (Debuffs.lua)
 		debuffs = {
@@ -123,7 +137,10 @@ function CW:OnInitialize()
 		return
 	end
 
-	self.db = LibStub("AceDB-3.0"):New("ClickwiseDB", defaults, true)
+	-- No default profile name: every character gets a profile of its own ("Name - Realm"), so one character's
+	-- setup never changes another's. (Passing `true` would put every character on one shared "Default".)
+	-- A character that already has a profile keeps it. The Profiles tab shares or copies one on purpose.
+	self.db = LibStub("AceDB-3.0"):New("ClickwiseDB", defaults)
 	self.db.RegisterCallback(self, "OnProfileChanged", "RefreshProfile")
 	self.db.RegisterCallback(self, "OnProfileCopied", "RefreshProfile")
 	self.db.RegisterCallback(self, "OnProfileReset", "RefreshProfile")
@@ -138,15 +155,33 @@ function CW:OnEnable()
 	CW.RebuildSpellbook()
 	self:RegisterEvent("SPELLS_CHANGED", "OnSpellsChanged")
 	self:RegisterEvent("PLAYER_REGEN_ENABLED", "OnRegenEnabled")
-	self:RegisterEvent("PLAYER_ENTERING_WORLD", "UpdateGroupType")
-	self:RegisterEvent("PARTY_MEMBERS_CHANGED", "UpdateGroupType")
-	self:RegisterEvent("RAID_ROSTER_UPDATE", "UpdateGroupType")
+	self:RegisterEvent("PLAYER_ENTERING_WORLD", "OnEnteringWorld")
+	self:RegisterEvent("ACTIVE_TALENT_GROUP_CHANGED", "OnSpecChanged")
+	self:RegisterEvent("PARTY_MEMBERS_CHANGED", "OnGroupChanged")
+	self:RegisterEvent("RAID_ROSTER_UPDATE", "OnGroupChanged")
+	-- what can change the role the player is playing (a dungeon finder role, a main tank assignment, the talents)
+	self:RegisterEvent("PLAYER_ROLES_ASSIGNED", "OnRoleMayHaveChanged")
+	self:RegisterEvent("PLAYER_TALENT_UPDATE", "OnRoleMayHaveChanged")
+	local LGT = LibStub("LibGroupTalents-1.0", true)
+	if LGT and LGT.RegisterCallback then
+		LGT.RegisterCallback(self, "LibGroupTalents_RoleChange", "OnRoleMayHaveChanged")
+	end
 	self:UpdateGroupType()
 end
 
 function CW:OnSpellsChanged()
 	CW.RebuildSpellbook()
 	self:SendMessage("CLICKWISE_SPELLS_CHANGED")
+end
+
+function CW:OnEnteringWorld()
+	self:UpdateGroupType()
+	self:OnSpecChanged()
+end
+
+function CW:OnGroupChanged()
+	self:UpdateGroupType()
+	self:OnRoleMayHaveChanged()
 end
 
 function CW:OnRegenEnabled()
@@ -171,8 +206,217 @@ end
 -- CLICKWISE_PROFILE:  the whole profile changed, so bindings must be re-applied too.
 --------------------------------------------------------------------------------
 function CW:RefreshProfile()
+	self:RememberSpecProfile()
+	self:RememberRoleProfile()
 	self:SendMessage("CLICKWISE_PROFILE")
 	self:RefreshAll()
+end
+
+-- The name AceDB gives this character's own profile.
+function CW:CharKey()
+	return UnitName("player") .. " - " .. GetRealmName()
+end
+
+-- The other characters that use profile `name` (sorted "Name - Realm" strings).
+function CW:ProfileUsers(name)
+	local out = {}
+	local keys = self.db.sv and self.db.sv.profileKeys
+	if keys then
+		local me = self:CharKey()
+		for char, profile in pairs(keys) do
+			if profile == name and char ~= me then out[#out + 1] = char end
+		end
+	end
+	table.sort(out)
+	return out
+end
+
+-- Every profile name, sorted.
+function CW:ProfileNames()
+	local names = self.db:GetProfiles()
+	table.sort(names)
+	return names
+end
+
+-- Switch this character to profile `name` (created, with the default settings, if it is new).
+function CW:UseProfile(name)
+	name = (name or ""):gsub("^%s+", ""):gsub("%s+$", "")
+	if name == "" then return false end
+	self.db:SetProfile(name)
+	return true
+end
+
+--------------------------------------------------------------------------------
+-- A profile per talent spec (a dual-spec paladin tanks in one spec and heals in the other).
+-- char.specProfiles = {enabled, [1] = profile name, [2] = profile name}. While it is on, the profile the
+-- character uses is remembered for the active spec (whatever way it was chosen), and a change of spec switches to
+-- the profile of the new one. A spec with no profile yet keeps the current one and records it. A spec change
+-- cannot happen in combat, but the game can be entered in it: the switch waits for combat to end.
+--------------------------------------------------------------------------------
+function CW:ActiveSpec()
+	return (GetActiveTalentGroup and GetActiveTalentGroup()) or 1
+end
+
+function CW:SpecProfiles()
+	return self.db.char.specProfiles
+end
+
+-- Called whenever the profile changed: the active spec now uses it.
+function CW:RememberSpecProfile()
+	local sp = self.db.char.specProfiles
+	if sp.enabled then sp[self:ActiveSpec()] = self.db:GetCurrentProfile() end
+end
+
+function CW:SetSpecProfilesEnabled(on)
+	local sp = self.db.char.specProfiles
+	sp.enabled = on and true or false
+	if sp.enabled then
+		if self.db.char.roleProfiles.enabled then self:SetRoleProfilesEnabled(false) end -- (the role usually follows the spec: both would switch)
+		self:RememberSpecProfile()
+	end
+end
+
+-- Choose the profile a spec uses: switched to at once when it is the active spec, else when the spec is next used.
+function CW:SetSpecProfile(group, name)
+	name = (name or ""):gsub("^%s+", ""):gsub("%s+$", "")
+	if name == "" then return false end
+	self.db.char.specProfiles[group] = name
+	if group == self:ActiveSpec() then self:UseProfile(name) end
+	return true
+end
+
+function CW:ApplySpecProfile()
+	local sp = self.db.char.specProfiles
+	if not sp.enabled then return end
+	local group, current = self:ActiveSpec(), self.db:GetCurrentProfile()
+	local name = sp[group]
+	if not name then
+		sp[group] = current -- first time in this spec: keep the profile in use
+	elseif name ~= current then
+		self.db:SetProfile(name)
+	end
+end
+
+function CW:OnSpecChanged()
+	if not self.db then return end
+	self:RunOOC("spec.profile", CW.ApplySpecProfile, CW)
+	self:OnRoleMayHaveChanged()
+end
+
+--------------------------------------------------------------------------------
+-- A profile per role (a paladin that tanks in one group and heals in the next: same talents, different frames).
+-- char.roleProfiles = {enabled, role, TANK = name, HEALER = name, DAMAGER = name}. It works like the profile per
+-- talent spec, with the role CW.GetUnitRole reports for the player in place of the spec (the dungeon finder role,
+-- else the talents, else "My role" set by hand). The two are exclusive: the role usually follows the spec, so both
+-- would switch at once. A role that is not known yet (the talents are not inspected) switches nothing.
+--
+-- "My role" set by hand then lives on the character (roleProfiles.role), not in the profile: a role that picks the
+-- profile cannot be stored inside it (the Tank profile saying Healer would bounce between the two forever).
+-- profileRole is the role the profile in use was chosen for; it can differ from the live role while combat holds
+-- back a switch, and a profile chosen by hand in that window belongs to the role it was in use for.
+--------------------------------------------------------------------------------
+CW.ROLES = {"TANK", "HEALER", "DAMAGER"}
+
+function CW:RoleProfiles()
+	return self.db.char.roleProfiles
+end
+
+-- The "My role" setting: in the profile, or on the character while a profile per role is on. "AUTO" = detect.
+function CW:MyRole()
+	local rp = self.db.char.roleProfiles
+	return (rp.enabled and rp.role or self.db.profile.myRole) or "AUTO"
+end
+
+function CW:SetMyRole(role)
+	local rp = self.db.char.roleProfiles
+	if rp.enabled then rp.role = role else self.db.profile.myRole = role end
+	self:OnRoleMayHaveChanged()
+	self:RefreshAll()
+end
+
+-- Called whenever the profile changed: the role in play now uses it.
+function CW:RememberRoleProfile()
+	local rp = self.db.char.roleProfiles
+	if rp.enabled and self.profileRole then rp[self.profileRole] = self.db:GetCurrentProfile() end
+end
+
+function CW:SetRoleProfilesEnabled(on)
+	local rp = self.db.char.roleProfiles
+	on = on and true or false
+	if on == (rp.enabled and true or false) then return end
+	if on then
+		self.db.char.specProfiles.enabled = false
+		rp.role = self.db.profile.myRole or "AUTO" -- the role in force stays in force
+		rp.enabled = true
+		self.profileRole = CW.GetUnitRole("player")
+		self:RememberRoleProfile()
+	else
+		self.db.profile.myRole = rp.role or "AUTO"
+		rp.enabled = false
+		self.profileRole = nil
+	end
+	self:RefreshAll()
+end
+
+-- Choose the profile a role uses: switched to at once when it is the role in play, else when that role is next played.
+function CW:SetRoleProfile(role, name)
+	name = (name or ""):gsub("^%s+", ""):gsub("%s+$", "")
+	if name == "" then return false end
+	self.db.char.roleProfiles[role] = name
+	if role == CW.GetUnitRole("player") then
+		self.profileRole = role
+		self:UseProfile(name)
+	end
+	return true
+end
+
+function CW:ApplyRoleProfile()
+	local rp = self.db.char.roleProfiles
+	if not rp.enabled then return end
+	local role = CW.GetUnitRole("player")
+	if not role then return end
+	self.profileRole = role
+	local name, current = rp[role], self.db:GetCurrentProfile()
+	if not name then
+		rp[role] = current -- first time in this role: keep the profile in use
+	elseif name ~= current then
+		self.db:SetProfile(name)
+	end
+end
+
+function CW:OnRoleMayHaveChanged()
+	if not self.db or not self.db.char.roleProfiles.enabled then return end
+	self:RunOOC("role.profile", CW.ApplyRoleProfile, CW)
+end
+
+-- Delete a profile (never the one in use); a spec or a role that used it forgets it.
+function CW:DeleteProfile(name)
+	if name == self.db:GetCurrentProfile() then return false end
+	self.db:DeleteProfile(name, true)
+	local sp = self.db.char.specProfiles
+	for group = 1, 2 do
+		if sp[group] == name then sp[group] = nil end
+	end
+	local rp = self.db.char.roleProfiles
+	for _, role in ipairs(CW.ROLES) do
+		if rp[role] == name then rp[role] = nil end
+	end
+	return true
+end
+
+-- Move this character onto a profile of its own: a copy of the one it uses now, unless that profile
+-- already exists (then it is just switched to, never overwritten). Returns "already", "switched" or "created".
+function CW:GiveOwnProfile()
+	local key, old = self:CharKey(), self.db:GetCurrentProfile()
+	if old == key then return "already" end
+	local exists = false
+	for _, name in ipairs(self:ProfileNames()) do
+		if name == key then exists = true end
+	end
+	self.db:SetProfile(key)
+	if exists then return "switched" end
+	self.db:CopyProfile(old, true)
+	return "created"
 end
 
 function CW:RefreshAll()
@@ -260,6 +504,28 @@ function CW:SlashCommand(input)
 		for _, line in ipairs(CW.Debuffs:Describe()) do
 			self:Print(line)
 		end
+	elseif cmd == "profile" then
+		-- this character's profile, who else uses it, and (with a name) a switch
+		if rest ~= "" then
+			self:UseProfile(rest)
+		end
+		local current = self.db:GetCurrentProfile()
+		self:Print((L["Profile: %s (this character: %s)."]):format(current, self:CharKey()))
+		local users = self:ProfileUsers(current)
+		if #users > 0 then
+			self:Print((L["Also used by: %s."]):format(table.concat(users, ", ")))
+		else
+			self:Print(L["No other character uses this profile."])
+		end
+		self:Print((L["Profiles: %s."]):format(table.concat(self:ProfileNames(), ", ")))
+		if self.db.char.roleProfiles.enabled then
+			self:Print((L["A profile per role is on; you play %s."]):format(CW.GetUnitRole("player") or "?"))
+		end
+	elseif cmd == "threat" then
+		-- debugging aid: the enemy the threat bar measures against, and each frame's status and percentage
+		for _, line in ipairs(CW.Threat:Describe()) do
+			self:Print(line)
+		end
 	elseif cmd == "test" then
 		-- a made-up group to try the frames without other players (Test.lua)
 		CW.Test:Command(rest)
@@ -286,6 +552,6 @@ function CW:SlashCommand(input)
 			self:Print("Settings window files were not loaded. Fully restart the game client (a /reload is not enough after files are added to the .toc).")
 		end
 	else
-		self:Print("/cw [config] | lock | unlock | reset | binds | bind <key> <spell> | unbind <key> | resetbinds | buffs [unit] | buffcheck | debuffs [unit] | dispels | test [5|10|25|40|off|combat]")
+		self:Print("/cw [config] | lock | unlock | reset | binds | bind <key> <spell> | unbind <key> | resetbinds | buffs [unit] | buffcheck | debuffs [unit] | dispels | threat | profile [name] | test [5|10|25|40|off|combat]")
 	end
 end

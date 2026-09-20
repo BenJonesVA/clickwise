@@ -16,6 +16,12 @@
 -- unit gets the click's other binding (a plain left click still targets). Its own `when` domain, "REZ", and
 -- out of combat only, for the same reason as the cure. Deaths mostly happen in combat, when nothing can be
 -- rewritten: the pick is written as soon as the fight ends.
+-- type "taunt" is the tank's click: it taunts the enemy the clicked member is targeting, with the class's own
+-- taunt (Taunt for a warrior, Hand of Reckoning for a paladin, Dark Command for a death knight, Growl for a
+-- druid), so one template serves every tank class. A taunt needs a HOSTILE target, which a friendly frame does not
+-- have, so the macro aims at the member's target: "/cast [target=<unit>target,harm,nodead] <taunt>". Unlike the
+-- smart clicks it works in combat (that is when a tank taunts) and it takes the click over like an ordinary
+-- binding. The macro names the unit token, so it is rewritten (out of combat) when the button's unit changes.
 -- Bindings become exact-match secure attributes ("shift-type1", "shift-spell1", ...) on every
 -- unit button; exact matches beat the "*type1"/"*type2" wildcard defaults from templates.xml,
 -- so left = target and right = menu keep working for every unbound modifier combination.
@@ -54,6 +60,8 @@ local COMBAT_POLL = 0.5 -- seconds between reads of every frame's unit combat st
 -- Binding kinds that cast a spell, and so can be gated on combat.
 local CASTS = {spell = true, buff = true, assigned = true}
 local WHEN_TEXT = {OOC = L["Out of combat"], COMBAT = L["In combat"]}
+
+local tauntSpell -- the class taunt the player knows, or nil (see RebuildTaunt below)
 
 -- The smart clicks: each lives in a `when` domain of its own, beside the ordinary bindings (its fallback).
 local SMART = {cure = "CURE", rez = "REZ"}
@@ -258,6 +266,8 @@ local function CastName(b, btn)
 		return btn.cwCureSpell -- picked per unit by Debuffs.lua; nil while the unit has nothing the player can remove
 	elseif b.type == "rez" then
 		return btn.cwRezSpell -- picked per unit below (UpdateRez); nil while the unit is alive
+	elseif b.type == "taunt" then
+		return tauntSpell -- the class taunt; nil until the player knows it
 	end
 end
 
@@ -273,7 +283,7 @@ end
 local BUTTON_ORDER = {"1", "2", "3", "4", "5"}
 local BUTTON_TIP = {["1"] = L["Left"], ["2"] = L["Right"], ["3"] = L["Middle"], ["4"] = L["Button 4"], ["5"] = L["Button 5"]}
 local DEFAULT_CLICK = {["1"] = L["Target"], ["2"] = L["Menu"]} -- the "*type1" / "*type2" wildcard defaults of templates.xml
-local KIND_TEXT = {target = L["Target"], focus = L["Focus"], assist = L["Assist"], macro = L["Macro"], cure = L["Cure debuff"], rez = L["Resurrect"]}
+local KIND_TEXT = {target = L["Target"], focus = L["Focus"], assist = L["Assist"], macro = L["Macro"], cure = L["Cure debuff"], rez = L["Resurrect"], taunt = L["Taunt"]}
 
 -- Lines for the hover tooltip: what each click does with this modifier prefix ("" or "alt-ctrl-shift-") held.
 -- Each line is {left = button, right = action, r, g, b}. Second result: whether bindings on other modifier
@@ -299,7 +309,7 @@ function ClickCast:TooltipLines(btn, modifier)
 		if list then
 			for _, b in ipairs(list) do
 				local what = CastName(b, btn)
-				if SMART[b.type] then
+				if SMART[b.type] or b.type == "taunt" then
 					what = KIND_TEXT[b.type] .. (what and (": " .. what) or "")
 				elseif not what then
 					what = (b.type == "assigned" and L["Assigned buff"]) or KIND_TEXT[b.type] or b.group or b.spell or "?"
@@ -323,9 +333,15 @@ end
 -- Whether any binding of the list needs the macro path: a casting binding that is gated, an assigned one or a smart click.
 local function NeedsMacro(items)
 	for _, b in ipairs(items) do
-		if b.type == "assigned" or SMART[b.type] or (CASTS[b.type] and WhenOf(b) ~= "ANY") then return true end
+		if b.type == "assigned" or b.type == "taunt" or SMART[b.type] or (CASTS[b.type] and WhenOf(b) ~= "ANY") then return true end
 	end
 	return false
+end
+
+-- The unit whose target a taunt aims at: "party2" -> "party2target"; the player's own target is just "target".
+local function TauntTarget(unit)
+	if unit == "player" then return "target" end
+	return unit .. "target"
 end
 
 -- The macro for one click that carries gated / assigned bindings (see the header comment), or nil when
@@ -348,7 +364,9 @@ local function BuildClickMacro(btn, items, button)
 				if not fights then cond = "combat," end -- the unit is fighting: allowed whatever we are doing
 			end
 			if not skip then
-				local clause = ("[%starget=%s] %s"):format(cond, unit, spell)
+				local target, extra = unit, ""
+				if b.type == "taunt" then target, extra = TauntTarget(unit), ",harm,nodead" end
+				local clause = ("[%starget=%s%s] %s"):format(cond, target, extra, spell)
 				if cond ~= "" then gated[#gated + 1] = clause else open[#open + 1] = clause end
 			end
 		end
@@ -452,9 +470,36 @@ end
 -- Does any binding's attribute depend on live state (unit, unit combat, assigned pick, cure / rez pick)?
 function ClickCast:IsDynamic()
 	for _, b in ipairs(self:GetBindings()) do
-		if b.type == "assigned" or SMART[b.type] or (CASTS[b.type] and WhenOf(b) ~= "ANY") then return true end
+		if b.type == "assigned" or b.type == "taunt" or SMART[b.type] or (CASTS[b.type] and WhenOf(b) ~= "ANY") then return true end
 	end
 	return false
+end
+
+-- The class taunt: {spell id, English name}. The English name is tried first, then whatever the id resolves to, so a
+-- wrong id cannot hide a known spell. [belief] the ids and names, from game knowledge; a Death Knight's Death
+-- Grip and a Hunter's Distracting Shot are no taunts and are not here.
+local TAUNT = {
+	WARRIOR = {355, "Taunt"},
+	PALADIN = {62124, "Hand of Reckoning"},
+	DEATHKNIGHT = {56222, "Dark Command"},
+	DRUID = {6795, "Growl"},
+}
+
+function ClickCast:RebuildTaunt()
+	tauntSpell = nil
+	local entry = TAUNT[ClassKey()]
+	if entry then
+		for _, name in ipairs({entry[2], GetSpellInfo(entry[1])}) do
+			if CW.KnowsSpell(name) then
+				tauntSpell = name
+				return
+			end
+		end
+	end
+end
+
+function ClickCast:TauntSpell()
+	return tauntSpell
 end
 
 -- The class resurrection: {spell id, English name}. Not Rebirth (combat only, and the smart clicks are out of
@@ -560,6 +605,7 @@ function ClickCast:ApplyAll()
 	end
 	local gated = self:HasGatedBinding()
 	self:RebuildRez() -- the spellbook may have changed
+	self:RebuildTaunt()
 	if CW.Debuffs and self:HasCureBinding() then
 		CW.Debuffs:RefreshAll() -- every button's cure pick must be current before its click is written
 	end
@@ -572,6 +618,7 @@ end
 
 function ClickCast:OnEnable()
 	self:RebuildRez()
+	self:RebuildTaunt()
 	if MigrateBindings() then
 		self:ApplyAll() -- buttons may already exist and were set up from the template
 	end

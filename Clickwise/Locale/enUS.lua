@@ -209,6 +209,52 @@ L["Casts your resurrection on a dead or released member. Only while you are out 
 L["Resurrect"] = true
 L["You know no resurrection spell - this does nothing until you do."] = true
 
+-- Profiles and the player's own role
+L["Profiles"] = true
+L["Automatic"] = true
+L["My role"] = true
+L["Profile: %s (this character: %s)."] = true
+L["Also used by: %s."] = true
+L["No other character uses this profile."] = true
+L["Profiles: %s."] = true
+L["Profile in use: %s"] = true
+L["Shared with: %s. A change made here changes it for them too."] = true
+L["Only this character uses it."] = true
+L["A profile holds the frame layout, bindings, buff rules and every other setting. Each character gets a profile of its own the first time it logs in, so one character's setup never changes another's. Characters can share a profile on purpose."] = true
+L["Use profile"] = true
+L["New profile"] = true
+L["Create and use"] = true
+L["Copy settings from"] = true
+L["Copy"] = true
+L["Replaces everything in the profile in use."] = true
+L["Reset this profile"] = true
+L["Give this character its own profile"] = true
+L["Delete profile"] = true
+L["Delete"] = true
+L["A different profile for each talent spec"] = true
+L["A different profile for each role"] = true
+L["A profile per role is on; you play %s."] = true
+L["Spec %d"] = true
+L["This character now has its own profile, a copy of the one it used."] = true
+L["This character switched to its own profile."] = true
+L["This character already has its own profile."] = true
+L["Copied the settings of %s."] = true
+L["Profile reset."] = true
+L["Deleted profile %s."] = true
+
+-- Taunt click
+L["Taunt"] = true
+L["Taunts the enemy this member is targeting, with your class's taunt (Taunt, Hand of Reckoning, Dark Command or Growl). Works in combat. A member with no enemy targeted: nothing happens."] = true
+L["You know no taunt spell - this does nothing until you do."] = true
+L["Test: your click casts %s on what %s is targeting."] = true
+
+-- Threat (Threat.lua)
+L["Threat"] = true
+L["%d%% toward pulling"] = true
+L["Aggro border"] = true
+L["Threat bar"] = true
+L["Red ring: has the enemy. Yellow: about to take it. Tanks and pets get none. The warning percentage is on the General tab."] = true
+
 -- Test mode (Test.lua)
 L["Test group: the frames are not built yet."] = true
 L["Test group: %d made-up members, shown below your frames. Click one to see what your click would cast. /cw test combat switches combat colors, /cw test off ends it."] = true

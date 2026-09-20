@@ -160,6 +160,13 @@ local COMBAT_COLOR_MODES = {
 	{value = "OFF", label = L["Off"]},
 }
 
+local MY_ROLES = {
+	{value = "AUTO", label = L["Automatic"]},
+	{value = "TANK", label = L["Tank"]},
+	{value = "HEALER", label = L["Healer"]},
+	{value = "DAMAGER", label = L["Damage"]},
+}
+
 local TOOLTIP_MODES = {
 	{value = "DETAILED", label = L["Detailed"]},
 	{value = "BASIC", label = L["Standard"]},
@@ -188,7 +195,12 @@ local function BuildGeneral(page)
 	Config.NewButton(page, 8, -170, 150, L["Reset position"], function()
 		CW.Frames:ResetPosition()
 	end)
-	local tip = Config.NewLabel(page, 8, -236,L["Tip: unlock the frames, then drag the blue 'Clickwise' tab above them."], "GameFontHighlightSmall")
+	-- the player's own role: detected from the talents, or set by hand (a paladin can tank or heal)
+	Config.NewLabel(page, 8, -208, L["My role"])
+	Config.NewDropdown(page, 84, -204, 100, MY_ROLES,
+		function() return CW:MyRole() end,
+		function(value) CW:SetMyRole(value) end)
+	local tip = Config.NewLabel(page, 8, -240,L["Tip: unlock the frames, then drag the blue 'Clickwise' tab above them."], "GameFontHighlightSmall")
 	tip:SetWidth(600)
 
 	-- health bars change color in combat (CombatColor.lua)
@@ -235,6 +247,15 @@ local function BuildLayout(page)
 	Config.NewCheck(page, 4, -196, L["Only debuffs I can remove"], {"debuffs", "onlyMine"})
 	Config.NewCheck(page, 4, -224, L["Show the debuff icon"], {"debuffs", "icon"})
 
+	-- aggro border and threat bar (Threat.lua)
+	Config.NewLabel(page, 8, -262, L["Threat"])
+	Config.NewCheck(page, 4, -284, L["Aggro border"], {"threat", "border"})
+	Config.NewCheck(page, 4, -312, L["Threat bar"], {"threat", "bar"})
+	local threatNote = Config.NewLabel(page, 8, -344,
+		L["Red ring: has the enemy. Yellow: about to take it. Tanks and pets get none. The warning percentage is on the General tab."],
+		"GameFontHighlightSmall")
+	threatNote:SetWidth(310)
+
 	Config.NewSlider(page, 340, -30, L["Scale"], {"scale"}, 0.5, 2, 0.05, "%.2f")
 	Config.NewSlider(page, 340, -90, L["Frame width"], {"frame", "width"}, 40, 160, 1, "%d")
 	Config.NewSlider(page, 340, -150, L["Frame height"], {"frame", "height"}, 20, 80, 1, "%d")
@@ -251,6 +272,7 @@ local TABS = {
 	{key = "bindings", label = L["Bindings"]}, -- builder registered by ConfigBindings.lua
 	{key = "buffs", label = L["Buffs"]}, -- builder registered by ConfigBuffs.lua
 	{key = "assign", label = L["Assignments"]}, -- builder registered by ConfigAssign.lua
+	{key = "profiles", label = L["Profiles"]}, -- builder registered by ConfigProfiles.lua
 }
 
 function Config:SelectTab(index)
@@ -316,11 +338,11 @@ function Config:Build()
 	local x = 24
 	for i, tab in ipairs(TABS) do
 		local b = CreateFrame("Button", "ClickwiseConfigTab" .. i, f, "UIPanelButtonTemplate")
-		b:SetSize(110, 24)
+		b:SetSize(100, 24)
 		b:SetPoint("TOPLEFT", f, "TOPLEFT", x, -44)
 		b:SetText(tab.label)
 		b:SetScript("OnClick", function() Config:SelectTab(i) end)
-		x = x + 114
+		x = x + 104
 		tab.button = b
 
 		local page = CreateFrame("Frame", nil, f)

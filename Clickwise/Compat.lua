@@ -237,6 +237,12 @@ function CW.GetUnitRole(unit)
 		return nil
 	end
 
+	-- the player's own frame goes by the role set by hand, if there is one (a paladin can tank or heal)
+	local mine = CW.db and CW:MyRole()
+	if mine and mine ~= "AUTO" and API.UnitIsUnit and API.UnitIsUnit(unit, "player") then
+		return mine
+	end
+
 	if UnitGroupRolesAssigned then
 		local isTank, isHealer, isDamage = UnitGroupRolesAssigned(unit)
 		if isTank then

@@ -17,8 +17,14 @@ Clickwise is **3.3.5 only** (`Interface: 30300`). On any other client it disable
 - **Incoming heal prediction** via LibHealComm-4.0, with a configurable look-ahead window and an option to include your own heals.
 - **Missing-buff tracking.** Buffs are grouped by what they do, so any equivalent buff counts. For example, Power Word: Fortitude and Prayer of Fortitude both satisfy the Stamina group, whoever cast them. Missing buffs show as icons on the frame, and you can reorder the spell priority per group.
 - **Buff assignments.** Set rules per role (tank, healer, damage dealer), per class, or for everyone else. Clickwise shows the first buff in the list the unit is missing. An "Assigned buff" click binding casts it out of combat.
+- **Tank and utility clicks for every tank class.** A **Taunt** action taunts whatever the clicked member is targeting, with your class's own taunt (Taunt, Hand of Reckoning, Dark Command or Growl), and works in combat. The warrior, paladin, death knight and druid templates carry it on Ctrl+Shift+Left. Templates also carry Intervene, Vigilance, the paladin hands and Righteous Defense, Innervate, Rebirth, Misdirection, Tricks of the Trade, Pain Suppression and Guardian Spirit for the classes that have them.
+- **Aggro border and threat bar.** In combat, a healer or damage dealer who has the enemy gets a pulsing red ring around their frame, and one about to take it a yellow ring. A thin bar along the bottom edge shows how far each unit is toward pulling. Tanks, pets and members whose role is not known yet get neither. `/cw threat` shows what the addon sees.
 - **Combat-safe layout changes.** Anything that touches secure frames while you are in combat is queued and applied when combat ends.
-- **Own settings window** with tabs for General, Layout, Bindings, Buffs and Assignments. Profiles are handled by AceDB.
+- **A profile per character.** Every character gets its own profile the first time it logs in, so one character's layout, bindings and buff rules never change another's. The Profiles tab shows which profile you are on and who shares it, and can switch, create, copy, reset and delete profiles, or move a character that is on a shared profile onto its own copy. `/cw profile` prints the same.
+- **A profile per talent spec.** Turn it on in the Profiles tab and each of your two talent specs uses its own profile, switched automatically when you change spec (a dual-spec paladin can tank in one and heal in the other). Whatever profile you pick while in a spec is remembered for it.
+- **A profile per role.** Turn it on in the Profiles tab and each role (tank, healer, damage) uses its own profile, switched automatically when your role changes: a change of spec, a dungeon finder role, a main tank assignment, or "My role" set by hand. Use it when the same talents tank in one group and heal in the next. It is exclusive with the profile per talent spec (the role usually follows the spec). With it on, "My role" is kept on the character instead of in the profile.
+- **My role.** Your own role (tank, healer or damage) is detected from your talents, or set by hand on the General tab. Combat colors, the role icon and the aggro rings follow it, so a paladin can switch between tanking and healing.
+- **Own settings window** with tabs for General, Layout, Bindings, Buffs, Assignments and Profiles.
 
 ## Installation
 
@@ -57,7 +63,7 @@ To move the frames, run `/cw unlock` and drag the blue **Clickwise** tab above t
 
 Planned, not built yet:
 
-- Threat / tank module: aggro and threat-percentage indicators, plus tank click-cast utilities (taunts, Misdirection, Tricks of the Trade, and so on)
+- Tracking of active tank defensives and external cooldowns on the frames
 - Debuff bouquets: priority-based indicators so dangerous debuffs override minor ones, with class-aware cleanse filtering
 - A richer hover tooltip on unit frames (missing buffs, who supplied the ones present)
 - Automatic profile switching based on instance and group state
