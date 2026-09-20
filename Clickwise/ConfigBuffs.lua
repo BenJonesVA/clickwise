@@ -135,7 +135,7 @@ local function Build(page)
 	function RefreshRight()
 		local group = S.key and Buffs:GetGroup(S.key)
 		local show = group ~= nil
-		title:SetText(show and group.label or "")
+		title:SetText(show and (group.selfOnly and (L["%s (only on you)"]):format(group.label) or group.label) or "")
 		SetShown(hint, show)
 		SetShown(casts, show)
 		SetShown(bindNote, show)

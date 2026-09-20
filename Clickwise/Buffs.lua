@@ -35,6 +35,11 @@
 -- (running only while some frame has a timed buff) animates the icons and notices when a buff enters
 -- its warning window.
 --
+-- PERSONAL BUFFS (BuffData.lua, selfOnly groups: seals, armors, aspects, Righteous Fury...) are the same machinery
+-- with three differences: they are only tracked on the player's own frame, only auras the player cast count (an
+-- aura from anyone else is not the player's own seal or aura), and they can only be part of the "Self" rule. A
+-- `toggle` group (a click while it is up may cancel it) is never picked by the Assigned buff click while it is up.
+--
 -- The icons are plain textures under a non-secure child frame, so painting them is legal in combat.
 -- Rank comparison / auto-downgrade for low-level targets is deliberately not done: 3.3.5 exposes no
 -- reliable rank-vs-level data and the aura "rank" field is not trustworthy (see lessonslearned.md).
@@ -83,6 +88,7 @@ for _, group in ipairs(CW.BuffGroups) do groupByKey[group.key] = group end
 
 local groupOf = {}   -- [aura name] = group key
 local slotOf = {}    -- [spell / aura name] = exclusive slot (see BuffData.lua)
+local selfOnly = {}  -- [group key] = true for a personal buff (see BuffData.lua)
 local tracked = {}   -- ordered list of {key, label, icon, spell, slot} for groups being shown
 local trackedKeys = {}
 local scanKeys = {}  -- groups whose aura state is read: the tracked ones plus every group named in a rule
@@ -269,6 +275,12 @@ function Buffs:TargetLabel(key)
 	return key
 end
 
+-- Whether a group may be part of a target's rule: a personal buff only on the player's own frame ("SELF").
+function Buffs:CanTarget(key, targetKey)
+	local group = groupByKey[key]
+	return group ~= nil and (not group.selfOnly or targetKey == "SELF")
+end
+
 -- The saved list for a target (a copy; may be empty).
 function Buffs:GetRule(targetKey)
 	local out = {}
@@ -277,7 +289,7 @@ function Buffs:GetRule(targetKey)
 	local list = c and c.rules and c.rules[targetKey]
 	if list then
 		for _, key in ipairs(list) do
-			if groupByKey[key] then out[#out + 1] = key end
+			if self:CanTarget(key, targetKey) then out[#out + 1] = key end
 		end
 	end
 	return out
@@ -300,7 +312,7 @@ function Buffs:SetRule(targetKey, list)
 	if list and #list > 0 then
 		local copy, seen = {}, {}
 		for _, key in ipairs(list) do
-			if groupByKey[key] and not seen[key] then
+			if self:CanTarget(key, targetKey) and not seen[key] then
 				copy[#copy + 1] = key
 				seen[key] = true
 			end
@@ -335,21 +347,31 @@ function Buffs:ResolveNames()
 	end
 end
 
--- Lines for `/cw buffcheck`: data entries whose ID does not resolve to the expected English name
--- (only meaningful on an English client).
+-- Lines for `/cw buffcheck` (only meaningful on an English client). Two different findings:
+--   an ID that resolves to ANOTHER spell is wrong and dangerous: ResolveNames would rename the group to that spell;
+--   an ID the client does not know at all (a spell this expansion does not have) is harmless: the group is simply
+--   never offered, so it is listed apart and does not count as wrong.
 function Buffs:CheckData()
-	local lines, bad = {}, 0
+	local lines, bad, absent = {}, 0, 0
 	for _, group in ipairs(CW.BuffGroups) do
 		for _, s in ipairs(group.spells) do
 			local name = GetSpellInfo(s.id)
 			local expected = s.english or s.name
-			if name ~= expected then
+			if type(name) ~= "string" or name == "" then
+				absent = absent + 1
+				lines[#lines + 1] = ("%s: id %d (%s) is not on this client, so that spell is never offered"):format(group.key, s.id, expected)
+			elseif name ~= expected then
 				bad = bad + 1
-				lines[#lines + 1] = ("%s: id %d resolves to %s, expected %s"):format(group.key, s.id, tostring(name), expected)
+				lines[#lines + 1] = ("%s: id %d resolves to %s, expected %s"):format(group.key, s.id, name, expected)
 			end
 		end
 	end
-	lines[#lines + 1] = (bad == 0) and "All buff spell IDs resolve to the expected names." or (bad .. " buff spell ID(s) look wrong.")
+	if bad == 0 then
+		lines[#lines + 1] = "All buff spell IDs that exist on this client resolve to the expected names."
+			.. (absent > 0 and (" " .. absent .. " ID(s) are not on this client (harmless).") or "")
+	else
+		lines[#lines + 1] = bad .. " buff spell ID(s) resolve to a DIFFERENT spell: fix them in BuffData.lua."
+	end
 	return lines
 end
 
@@ -379,9 +401,10 @@ function Buffs:TooltipLines(btn)
 		end
 	end
 	local now = GetTime()
+	local isSelf = UnitIsUnit(unit, "player")
 	for _, group in ipairs(CW.BuffGroups) do
 		local entry = info[group.key]
-		if entry and scanKeys[group.key] then
+		if entry and scanKeys[group.key] and (isSelf or not selfOnly[group.key]) then
 			local have = btn.cwBuffState[group.key]
 			local line = {left = entry.label}
 			if have == MINE then
@@ -451,8 +474,9 @@ function Buffs:Rebuild()
 	enabled, showSatisfied = opts.enabled, opts.showSatisfied
 	warnSeconds = tonumber(opts.expireWarn) or 0
 
-	groupOf, slotOf, tracked, trackedKeys, scanKeys, info, ruleLists = {}, {}, {}, {}, {}, {}, {}
+	groupOf, slotOf, selfOnly, tracked, trackedKeys, scanKeys, info, ruleLists = {}, {}, {}, {}, {}, {}, {}, {}
 	for _, group in ipairs(CW.BuffGroups) do
+		selfOnly[group.key] = group.selfOnly and true or nil
 		for _, s in ipairs(group.spells) do
 			groupOf[s.name] = group.key
 			slotOf[s.name] = s.slot
@@ -461,7 +485,7 @@ function Buffs:Rebuild()
 			local spell = self:GetCastSpell(group.key)
 			local _, _, icon = GetSpellInfo(spell)
 			local entry = {key = group.key, label = group.label, icon = icon or QUESTION_MARK, spell = spell,
-				slot = slotOf[spell]}
+				slot = slotOf[spell], selfOnly = group.selfOnly, toggle = group.toggle}
 			info[group.key] = entry
 			if enabled and self:IsGroupEnabled(group.key) then
 				tracked[#tracked + 1] = entry
@@ -579,12 +603,15 @@ function Buffs:Scan(btn)
 		return
 	end
 
+	local isSelf = UnitIsUnit(unit, "player")
 	for i = 1, 40 do
 		local name, _, _, _, _, duration, expires, caster = UnitAura(unit, i, "HELPFUL")
 		if not name then break end
 		local key = groupOf[name]
-		if key and scanKeys[key] then
-			if type(caster) == "string" and UnitIsUnit(caster, "player") then
+		local mine = type(caster) == "string" and UnitIsUnit(caster, "player")
+		-- a personal buff only counts on the player's own frame, and only when the player cast it
+		if key and scanKeys[key] and not (selfOnly[key] and not (isSelf and mine)) then
+			if mine then
 				state[key] = MINE
 				if slotOf[name] then slots[slotOf[name]] = key end -- the player's own slot spell is up
 				-- when the group runs out: the latest of the player's auras in it; a permanent one never does
@@ -606,7 +633,7 @@ function Buffs:Scan(btn)
 	if warnSeconds > 0 then
 		local now = GetTime()
 		for key, expires in pairs(exp) do
-			if expires and state[key] == MINE then
+			if expires and state[key] == MINE and not info[key].toggle then
 				if expires - now <= warnSeconds then
 					expiring[key] = expires
 				else
@@ -629,10 +656,16 @@ function Buffs:Scan(btn)
 		local todo, dones = WalkRule(rule, state)
 		btn.cwTodo, btn.cwDones = todo, dones
 		btn.cwChain, btn.cwDone = todo[1], dones[1]
-		-- the click always has something to cast: the first missing entry, else re-buff the first the player
-		-- gave, else (everything provided by others) the top entry
-		local pick = todo[1] or dones[1] or rule[1]
-		btn.cwAssignedSpell = info[pick].spell
+		-- the click has something to cast: the first missing entry, else re-buff the first the player gave, else
+		-- (everything provided by others) the top entry. A toggle (an aura, Righteous Fury) is never cast while it is
+		-- up, so when only those are left the click casts nothing
+		local pick = todo[1]
+		for _, list in ipairs({dones, rule}) do
+			for _, key in ipairs(pick and NONE or list) do
+				if not info[key].toggle then pick = key break end
+			end
+		end
+		btn.cwAssignedSpell = pick and info[pick].spell or nil
 	end
 end
 
@@ -668,6 +701,7 @@ function Buffs:Paint(btn)
 		local base, greyed = reachable and 1 or 0.8, not reachable
 		local ruleSet = btn.cwRule and btn.cwRule.set
 		local slotTaken = {}
+		local isSelf = UnitIsUnit(unit, "player")
 
 		-- The assignment's missing entries come first, in the rule's order: they are the buffs the player
 		-- decided this unit needs. Each takes its exclusive slot even if another of the player's slot spells
@@ -696,7 +730,7 @@ function Buffs:Paint(btn)
 		-- group whose spell shares an exclusive slot is skipped when the player already has another spell
 		-- of that slot on the unit, or when an earlier group took it.
 		for _, group in ipairs(tracked) do
-			if shown < MAX_ICONS and not (ruleSet and ruleSet[group.key]) then
+			if shown < MAX_ICONS and not (ruleSet and ruleSet[group.key]) and (isSelf or not group.selfOnly) then
 				local slot, key = group.slot, group.key
 				if not state[key] then
 					if not (slot and (slots[slot] or slotTaken[slot])) then

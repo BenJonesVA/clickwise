@@ -66,9 +66,8 @@ local function Build(page)
 	-- Right column: the selected target's list
 	----------------------------------------------------------------------------
 	local title = Config.NewLabel(page, FORM_X, -8, "", "GameFontNormal")
-	local hint = Config.NewLabel(page, FORM_X, -30,
-		L["Buffs the unit lacks are cast in this order, one per click. Buffs that replace each other (a paladin's blessings) are alternatives: the first one nobody else provides."],
-		"GameFontHighlightSmall")
+	local HINT = L["Buffs the unit lacks are cast in this order, one per click. Buffs that replace each other (a paladin's blessings) are alternatives: the first one nobody else provides."]
+	local hint = Config.NewLabel(page, FORM_X, -30, HINT, "GameFontHighlightSmall")
 	hint:SetWidth(290)
 
 	local chainRows = {}
@@ -141,6 +140,7 @@ local function Build(page)
 
 		-- right column
 		title:SetText(Buffs:TargetLabel(S.target))
+		hint:SetText(S.target == "SELF" and L["Your own frame. Buffs only you can put on yourself (seals, armors, aspects...) can be listed here. Cast in this order, one per click."] or HINT)
 		local list = Buffs:GetRule(S.target)
 		local inList = {}
 		for i = 1, CHAIN_ROWS do
@@ -170,7 +170,7 @@ local function Build(page)
 		-- candidates for "Add": groups this character can cast and that are not in the list yet
 		for i = #addItems, 1, -1 do addItems[i] = nil end
 		for _, group in ipairs(Buffs:GetGroups()) do
-			if Buffs:IsAvailable(group.key) and not inList[group.key] then
+			if Buffs:IsAvailable(group.key) and not inList[group.key] and Buffs:CanTarget(group.key, S.target) then
 				addItems[#addItems + 1] = {value = group.key, label = group.label}
 			end
 		end

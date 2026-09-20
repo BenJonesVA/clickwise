@@ -134,7 +134,9 @@ local function SeedBuffs(u, count)
 	local mineSlots = {}
 	for gi, group in ipairs(CW.BuffGroups) do
 		local state = (u.index + gi) % 6
-		if state == 1 or state == 2 then
+		if group.selfOnly then
+			-- a personal buff only ever shows on the player's own frame, and the test group has none
+		elseif state == 1 or state == 2 then
 			local other = (u.index + gi) % count + 1
 			if other == u.index then other = other % count + 1 end
 			local spell = group.spells[(u.index + gi) % #group.spells + 1]

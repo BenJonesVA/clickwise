@@ -119,6 +119,20 @@ L["Up"] = true
 L["You do not know a spell of this group - the binding will do nothing until you do."] = true
 L["Your class has no buff spells Clickwise can track yet."] = true
 
+-- Personal buffs (only on yourself)
+L["%s (only on you)"] = true
+L["Armor"] = true
+L["Aspect"] = true
+L["Bone Shield"] = true
+L["Elemental shield"] = true
+L["Inner Fire"] = true
+L["Paladin aura"] = true
+L["Righteous Fury"] = true
+L["Seal"] = true
+L["Shadowform"] = true
+L["Trueshot Aura"] = true
+L["Your own frame. Buffs only you can put on yourself (seals, armors, aspects...) can be listed here. Cast in this order, one per click."] = true
+
 -- Buff tracking
 L["Add"] = true
 L["Add a buff"] = true
