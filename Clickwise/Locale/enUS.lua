@@ -128,7 +128,7 @@ L["Clear this rule"] = true
 L["Damage dealers"] = true
 L["Everyone else"] = true
 L["Healers"] = true
-L["Highest priority first. Clickwise shows and casts the first buff the unit does not already have from anyone."] = true
+L["Buffs the unit lacks are cast in this order, one per click. Buffs that replace each other (a paladin's blessings) are alternatives: the first one nobody else provides."] = true
 L["No assignments yet - set them up in the Assignments tab."] = true
 L["Tanks"] = true
 L["Who gets which buff"] = true
@@ -187,3 +187,18 @@ L["Tank"] = true
 L["Target"] = true
 L["Unit tooltip"] = true
 L["Yours"] = true
+
+-- Debuff highlight
+L["Debuffs"] = true
+L["Highlight debuffs"] = true
+L["Only debuffs I can remove"] = true
+L["Show the debuff icon"] = true
+
+-- Cure debuff click
+L["Casts the spell that removes the worst debuff the unit has that you can remove (Cleanse, Remove Curse, Dispel Magic...). Only while you are out of combat: in combat, and when there is nothing to remove, the click does your other binding on the same click."] = true
+L["Cure debuff"] = true
+L["Nothing else is bound to this click, so it does nothing in combat. Bind a heal on the same click."] = true
+L["Otherwise this click targets the unit."] = true
+L["Otherwise this click: %s"] = true
+L["Removes: %s"] = true
+L["You know no spell that removes debuffs - this does nothing until you do."] = true

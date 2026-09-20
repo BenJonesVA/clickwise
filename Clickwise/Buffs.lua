@@ -14,14 +14,18 @@
 -- OUT of combat by ClickCast, so no secure attribute ever depends on live aura state.
 --
 -- ASSIGNMENTS: a rule (Assignments tab) gives a target (a role, a class or everyone else) an ordered list
--- of buff groups. For a unit that matches a rule the list is walked in order: a group the unit has from
--- SOMEONE ELSE is skipped (the fallback case: another paladin already gave the tank Sanctuary, so the
--- next entry is used); a group the unit has from the player ends the walk (nothing more to cast); the
--- first group the unit lacks is the buff to cast. If a higher entry goes missing again while a lower one
--- from the player is up, the higher one is shown again (strict priority). The chosen buff is shown as the
--- unit's icon and is what an "Assigned buff" binding casts. The pick is handed to ClickCast as a spell
--- name (btn.cwAssignedSpell); ClickCast turns it into the click's macro, gated on combat as the binding
--- asks (default: out of combat only), and rewrites it when the pick or the unit changes.
+-- of buff groups. For a unit that matches a rule the list is walked in order, and every entry ends up as
+-- one of: provided by SOMEONE ELSE (skipped: another paladin already gave the tank Sanctuary, so the next
+-- entry is used), provided by the player (satisfied), or missing (to do). Entries that share an exclusive
+-- slot (a paladin's blessings replace each other) are alternatives: the first one not provided by someone
+-- else takes the slot and the later ones are skipped, so a higher entry that goes missing again while a
+-- lower one from the player is up is shown again (strict priority). Entries in different slots, or with
+-- none (Mark of the Wild + Thorns), are all wanted. Every missing entry is shown as an icon, in the rule's
+-- order, and an "Assigned buff" binding casts the first one; a click starts a single spell, so the next
+-- click (after the aura lands and the pick moves on) casts the next. When nothing is missing the click
+-- re-casts the first entry the player provided. The pick is handed to ClickCast as a spell name
+-- (btn.cwAssignedSpell); ClickCast turns it into the click's macro, gated on combat as the binding asks
+-- (default: out of combat only), and rewrites it when the pick or the unit changes.
 --
 -- EXPIRY WARNING: a buff the PLAYER cast that has less than `buffs.expireWarn` seconds left is drawn like a
 -- missing one, but pulsing: slowly when the warning starts, faster as the time runs out. When the aura
@@ -85,6 +89,7 @@ local hasRules = false
 local enabled, showSatisfied, warnSeconds = true, false, 0
 local dirty, flushScheduled = {}, false
 local watch = {}         -- [button] = true while it has a buff in (or about to enter) its expiry warning
+local NONE = {}
 
 --------------------------------------------------------------------------------
 -- Saved settings. profile.buffs.classes[CLASS][GROUP] = {enabled = bool|nil, order = {names}|nil}
@@ -516,7 +521,7 @@ function Buffs:Scan(btn)
 	for k in pairs(slots) do slots[k] = nil end
 	for k in pairs(exp) do exp[k] = nil end
 	for k in pairs(expiring) do expiring[k] = nil end
-	btn.cwChain, btn.cwDone, btn.cwAssignedSpell, btn.cwWarnAt = nil, nil, nil, nil
+	btn.cwChain, btn.cwDone, btn.cwTodo, btn.cwDones, btn.cwAssignedSpell, btn.cwWarnAt = nil, nil, nil, nil, nil, nil
 	local unit = btn.unit
 	if not ((enabled and #tracked > 0 or hasRules) and unit and UnitIsPlayer(unit)) then
 		watch[btn] = nil
@@ -566,25 +571,30 @@ function Buffs:Scan(btn)
 	watch[btn] = (btn.cwWarnAt or next(expiring)) and true or nil
 	UpdateDriver()
 
-	-- assignment chain (see the header comment): skip what someone else provides, stop at what the
-	-- player already gave, otherwise the first missing entry is the buff to cast
+	-- assignment walk (see the header comment): what someone else provides is skipped, an entry whose exclusive
+	-- slot an earlier entry took is an alternative and skipped, the rest is either the player's (satisfied) or
+	-- missing (to do)
 	local rule = btn.cwRule
 	if rule then
-		local target, done
+		local todo, dones, claimed = {}, {}, {}
 		for _, key in ipairs(rule) do
-			local have = state[key]
-			if have == MINE then
-				done = key
-				break
-			elseif have == nil then
-				target = key
-				break
+			local slot = info[key].slot
+			if not (slot and claimed[slot]) then
+				local have = state[key]
+				if have == MINE then
+					dones[#dones + 1] = key
+					if slot then claimed[slot] = true end
+				elseif have == nil then
+					todo[#todo + 1] = key
+					if slot then claimed[slot] = true end
+				end
 			end
 		end
-		btn.cwChain, btn.cwDone = target, done
-		-- the click always has something to cast: the missing entry, else re-buff what the player gave,
-		-- else (everything provided by others) the top entry
-		local pick = target or done or rule[1]
+		btn.cwTodo, btn.cwDones = todo, dones
+		btn.cwChain, btn.cwDone = todo[1], dones[1]
+		-- the click always has something to cast: the first missing entry, else re-buff the first the player
+		-- gave, else (everything provided by others) the top entry
+		local pick = todo[1] or dones[1] or rule[1]
 		btn.cwAssignedSpell = info[pick].spell
 	end
 end
@@ -622,21 +632,25 @@ function Buffs:Paint(btn)
 		local ruleSet = btn.cwRule and btn.cwRule.set
 		local slotTaken = {}
 
-		-- The assignment chain's pick comes first: it is the buff the player decided this unit needs.
-		-- It takes its exclusive slot even if another of the player's slot spells is already up (the
-		-- assignment says to replace it).
-		local chain = btn.cwChain and info[btn.cwChain]
-		if chain then
-			if chain.slot then slotTaken[chain.slot] = true end
-			show(chain, base, greyed)
+		-- The assignment's missing entries come first, in the rule's order: they are the buffs the player
+		-- decided this unit needs. Each takes its exclusive slot even if another of the player's slot spells
+		-- is already up (the assignment says to replace it).
+		for _, key in ipairs(btn.cwTodo or NONE) do
+			local entry = info[key]
+			if shown < MAX_ICONS then
+				if entry.slot then slotTaken[entry.slot] = true end
+				show(entry, base, greyed)
+			end
 		end
 
-		-- The buff the walk stopped at (the player's own) is what a click re-casts: when it is about to
-		-- run out it pulses. Skipped when the pick above replaces it anyway (same exclusive slot).
-		local done = btn.cwDone and info[btn.cwDone]
-		if done and expiring[done.key] and shown < MAX_ICONS and not (done.slot and slotTaken[done.slot]) then
-			if done.slot then slotTaken[done.slot] = true end
-			show(done, base, greyed, expiring[done.key])
+		-- The player's own entries are what a click re-casts: when one is about to run out it pulses.
+		-- Skipped when a pick above replaces it anyway (same exclusive slot).
+		for _, key in ipairs(btn.cwDones or NONE) do
+			local done = info[key]
+			if expiring[key] and shown < MAX_ICONS and not (done.slot and slotTaken[done.slot]) then
+				if done.slot then slotTaken[done.slot] = true end
+				show(done, base, greyed, expiring[key])
+			end
 		end
 
 		-- Pass 1: everything that needs attention - missing tracked buffs and the player's own buffs that

@@ -121,6 +121,10 @@ function UnitFrame:TooltipLines(btn)
 		out[#out + 1] = {left = L["Range"], right = L["Out of range"], r = 1, g = 0.3, b = 0.3}
 	end
 
+	if CW.Debuffs then
+		local lines = CW.Debuffs:TooltipLines(btn)
+		if #lines > 0 then section(L["Debuffs"], lines) end
+	end
 	if t.buffs then
 		local lines = CW.Buffs:TooltipLines(btn)
 		if #lines > 0 then section(L["Buffs"], lines) end
@@ -221,6 +225,7 @@ function UnitFrame:InitButton(btn)
 	btn.roleIcon:Hide()
 
 	CW.Buffs:InitButton(btn)
+	if CW.Debuffs then CW.Debuffs:InitButton(btn) end -- nil if this file list is stale (a new .lua file needs a full client restart)
 
 	btn.menu = UnitFrame.ShowMenu
 	btn:SetScript("OnEnter", function(self) UnitFrame:ShowTooltip(self) end)
@@ -270,6 +275,7 @@ function UnitFrame:LayoutButton(btn)
 	btn.statusText:SetFont(STANDARD_TEXT_FONT, f.fontSize - 1, "OUTLINE")
 	btn.cwMaxNameChars = floor((f.width - 4) / (f.fontSize * 0.55))
 	CW.Buffs:LayoutButton(btn)
+	if CW.Debuffs then CW.Debuffs:LayoutButton(btn) end
 end
 
 --------------------------------------------------------------------------------
@@ -313,6 +319,7 @@ function UnitFrame:UpdateButton(btn)
 	self:UpdateTarget(btn)
 	CW.Range:UpdateButton(btn)
 	CW.Buffs:UpdateButton(btn)
+	if CW.Debuffs then CW.Debuffs:UpdateButton(btn) end
 end
 
 function UnitFrame:UpdateName(btn)
@@ -343,6 +350,7 @@ function UnitFrame:UpdateHealth(btn)
 	if btn.cwOffline ~= offline or btn.cwDead ~= dead then
 		btn.cwOffline, btn.cwDead = offline, dead
 		CW.Buffs:Paint(btn) -- missing-buff icons grey out for dead / offline units
+		if CW.Debuffs then CW.Debuffs:UpdateButton(btn) end -- and the debuff border goes
 	end
 
 	btn.health:SetMinMaxValues(0, max)

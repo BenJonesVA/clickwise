@@ -6,8 +6,9 @@
 --           an "Add" dropdown of the groups this character can cast, and Clear rule
 --
 -- Resolution (Buffs.lua): a unit uses the rule of its role, else of its class, else "Everyone else".
--- The first buff in the list the unit does not already have (from anyone) is shown on its frame and
--- is what an "Assigned buff" binding casts (out of combat unless the binding says otherwise).
+-- Every buff in the list the unit does not already have (from anyone) is shown on its frame, and an
+-- "Assigned buff" binding casts the first of them (out of combat unless the binding says otherwise); the next
+-- click casts the next. Buffs that replace each other (a paladin's blessings) are alternatives.
 
 local CW = Clickwise
 local Config = CW.Config
@@ -65,7 +66,7 @@ local function Build(page)
 	----------------------------------------------------------------------------
 	local title = Config.NewLabel(page, FORM_X, -8, "", "GameFontNormal")
 	local hint = Config.NewLabel(page, FORM_X, -30,
-		L["Highest priority first. Clickwise shows and casts the first buff the unit does not already have from anyone."],
+		L["Buffs the unit lacks are cast in this order, one per click. Buffs that replace each other (a paladin's blessings) are alternatives: the first one nobody else provides."],
 		"GameFontHighlightSmall")
 	hint:SetWidth(290)
 

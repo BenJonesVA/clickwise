@@ -18,6 +18,7 @@ Range.lua
 HealPred.lua
 BuffData.lua
 Buffs.lua
+Debuffs.lua
 CombatColor.lua
 UnitFrame.lua
 ClickCast.lua

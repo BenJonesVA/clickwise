@@ -220,6 +220,12 @@ local function BuildLayout(page)
 		function() return Config.Get({"frame", "healthText"}) end,
 		function(value) Config.Set({"frame", "healthText"}, value) end)
 
+	-- debuff highlight (Debuffs.lua)
+	Config.NewLabel(page, 8, -146, L["Debuffs"])
+	Config.NewCheck(page, 4, -168, L["Highlight debuffs"], {"debuffs", "enabled"})
+	Config.NewCheck(page, 4, -196, L["Only debuffs I can remove"], {"debuffs", "onlyMine"})
+	Config.NewCheck(page, 4, -224, L["Show the debuff icon"], {"debuffs", "icon"})
+
 	Config.NewSlider(page, 340, -30, L["Scale"], {"scale"}, 0.5, 2, 0.05, "%.2f")
 	Config.NewSlider(page, 340, -90, L["Frame width"], {"frame", "width"}, 40, 160, 1, "%d")
 	Config.NewSlider(page, 340, -150, L["Frame height"], {"frame", "height"}, 20, 80, 1, "%d")

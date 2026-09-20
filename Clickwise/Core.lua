@@ -40,6 +40,12 @@ local defaults = {
 			red = 20, -- health: red below this percentage
 			threat = 80, -- threat: yellow once a unit is this far (percent) toward pulling the enemy
 		},
+		-- debuff highlight (Debuffs.lua)
+		debuffs = {
+			enabled = true,
+			onlyMine = true, -- only debuffs the player can remove (else every typed debuff, the others darker)
+			icon = true,     -- also show the debuff's icon in the frame's top-right corner
+		},
 		-- hover tooltip on the unit frames (UnitFrame.lua)
 		tooltip = {
 			mode = "DETAILED", -- DETAILED | BASIC (Blizzard's unit tooltip only) | OFF
@@ -244,6 +250,16 @@ function CW:SlashCommand(input)
 		for _, line in ipairs(CW.Buffs:DumpUnit(rest ~= "" and rest or "target")) do
 			self:Print(line)
 		end
+	elseif cmd == "debuffs" then
+		-- debugging aid: a unit's harmful auras with the debuff type the client reports
+		for _, line in ipairs(CW.Debuffs:DumpUnit(rest ~= "" and rest or "target")) do
+			self:Print(line)
+		end
+	elseif cmd == "dispels" then
+		-- debugging aid: which removal spells the client resolved and knows, and what that covers
+		for _, line in ipairs(CW.Debuffs:Describe()) do
+			self:Print(line)
+		end
 	elseif cmd == "buffcheck" then
 		-- debugging aid: verify the buff spell IDs in BuffData.lua against this client
 		self:Print(CW.Buffs:CheckMacroSupport())
@@ -267,6 +283,6 @@ function CW:SlashCommand(input)
 			self:Print("Settings window files were not loaded. Fully restart the game client (a /reload is not enough after files are added to the .toc).")
 		end
 	else
-		self:Print("/cw [config] | lock | unlock | reset | binds | bind <key> <spell> | unbind <key> | resetbinds | buffs [unit] | buffcheck")
+		self:Print("/cw [config] | lock | unlock | reset | binds | bind <key> <spell> | unbind <key> | resetbinds | buffs [unit] | buffcheck | debuffs [unit] | dispels")
 	end
 end

@@ -33,6 +33,7 @@ local KIND_ITEMS = {
 	{value = "spell", label = L["Cast spell"]},
 	{value = "buff", label = L["Buff group"]},
 	{value = "assigned", label = L["Assigned buff"]},
+	{value = "cure", label = L["Cure debuff"]},
 	{value = "macro", label = L["Macro"]},
 	{value = "target", label = L["Target unit"]},
 	{value = "focus", label = L["Set focus"]},
@@ -46,6 +47,11 @@ local WHEN_ORDER = {"ANY", "OOC", "COMBAT"}
 local WHEN_LABEL = {ANY = L["Any time"], OOC = L["Out of combat"], COMBAT = L["In combat"]}
 local WHEN_TAG = {OOC = L["ooc"], COMBAT = L["combat"]} -- short marker in the binding list
 local function IsCast(kind) return kind == "spell" or kind == "buff" or kind == "assigned" end
+-- The `when` domain a binding of this kind lives in ("CURE" is the smart cure click's own, see ClickCast.lua).
+local function WhenFor(kind, when)
+	if kind == "cure" then return "CURE" end
+	return IsCast(kind) and when or "ANY"
+end
 
 local function Trim(s)
 	return ((s or ""):gsub("^%s+", ""):gsub("%s+$", ""))
@@ -400,6 +406,13 @@ local function Build(page)
 		L["Casts your highest-priority known spell of the group. Set the priority in the Buffs tab."], "GameFontHighlightSmall")
 	buffSection[#buffSection]:SetWidth(290)
 
+	-- cure debuff section ---------------------------------------------------------
+	local cureSection = {}
+	cureSection[#cureSection + 1] = Config.NewLabel(page, FORM_X, -112,
+		L["Casts the spell that removes the worst debuff the unit has that you can remove (Cleanse, Remove Curse, Dispel Magic...). Only while you are out of combat: in combat, and when there is nothing to remove, the click does your other binding on the same click."],
+		"GameFontHighlightSmall")
+	cureSection[#cureSection]:SetWidth(290)
+
 	-- assigned buff section ------------------------------------------------------
 	local assignedSection = {}
 	assignedSection[#assignedSection + 1] = Config.NewLabel(page, FORM_X, -112,
@@ -418,6 +431,7 @@ local function Build(page)
 		ShowSection(macroSection, S.kind == "macro")
 		ShowSection(buffSection, S.kind == "buff")
 		ShowSection(assignedSection, S.kind == "assigned")
+		ShowSection(cureSection, S.kind == "cure")
 		-- an assigned buff is meant for out of combat (heals are what you want during the fight)
 		if not S.whenChosen then
 			S.when = (S.kind == "assigned") and "OOC" or "ANY"
@@ -438,7 +452,7 @@ local function Build(page)
 	function UpdateStatus()
 		local lines = {}
 		local modifier = CurrentModifier()
-		local when = IsCast(S.kind) and S.when or "ANY"
+		local when = WhenFor(S.kind, S.when)
 		local key = modifier .. S.button .. ":" .. when
 
 		-- what saving would replace: the bindings on this click that overlap in time (see ClickCast.lua)
@@ -454,7 +468,7 @@ local function Build(page)
 			lines[#lines + 1] = L["Editing an existing binding."]
 		end
 		-- a gated click does nothing the rest of the time: point at the other half
-		if when ~= "ANY" then
+		if when == "OOC" or when == "COMBAT" then
 			local other = (when == "OOC") and "COMBAT" or "OOC"
 			if not ClickCast:GetBinding(modifier, S.button, other) then
 				lines[#lines + 1] = when == "OOC"
@@ -485,10 +499,26 @@ local function Build(page)
 			if not CW.Buffs:HasRules() then
 				lines[#lines + 1] = "|cffffcc00" .. L["No assignments yet - set them up in the Assignments tab."] .. "|r"
 			end
+		elseif S.kind == "cure" then
+			local summary = CW.Debuffs and CW.Debuffs:CureSummary()
+			if summary then
+				lines[#lines + 1] = (L["Removes: %s"]):format(summary)
+			else
+				lines[#lines + 1] = "|cffffcc00" .. L["You know no spell that removes debuffs - this does nothing until you do."] .. "|r"
+			end
+			-- what the click does in combat and with nothing to remove
+			local other = ClickCast:GetBinding(modifier, S.button, "COMBAT") or ClickCast:GetBinding(modifier, S.button, "ANY")
+			if other then
+				lines[#lines + 1] = (L["Otherwise this click: %s"]):format(ActionText(other))
+			elseif S.button == "1" then
+				lines[#lines + 1] = L["Otherwise this click targets the unit."]
+			else
+				lines[#lines + 1] = "|cffffcc00" .. L["Nothing else is bound to this click, so it does nothing in combat. Bind a heal on the same click."] .. "|r"
+			end
 		elseif S.kind == "macro" and Trim(macroBox:GetText()) == "" then
 			lines[#lines + 1] = "|cffff7070" .. L["Enter the macro text."] .. "|r"
 		end
-		if modifier == "" and (S.button == "1" or S.button == "2") then
+		if modifier == "" and (S.button == "1" or S.button == "2") and S.kind ~= "cure" then
 			lines[#lines + 1] = "|cffffcc00" .. L["This overrides the built-in target / menu click."] .. "|r"
 		end
 		if InCombatLockdown() then
@@ -516,7 +546,7 @@ local function Build(page)
 		S.button = b.button
 		S.kind = b.type
 		S.group = b.group or CW.BuffGroups[1].key
-		S.when, S.whenChosen = ClickCast.WhenOf(b), true
+		S.when, S.whenChosen = (b.type == "cure") and "ANY" or ClickCast.WhenOf(b), true
 		S.selectedKey = BindingKey(b)
 		spellBox:SetText(b.spell or "")
 		rankBox:SetText(b.rank and (b.rank:match("%d+") or "") or "")
@@ -549,7 +579,7 @@ local function Build(page)
 
 	local function Remove()
 		local modifier = CurrentModifier()
-		if ClickCast:RemoveBinding(modifier, S.button, IsCast(S.kind) and S.when or "ANY") then
+		if ClickCast:RemoveBinding(modifier, S.button, WhenFor(S.kind, S.when)) then
 			S.selectedKey = nil
 			UpdateList()
 		end
