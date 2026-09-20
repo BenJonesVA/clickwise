@@ -1,0 +1,17 @@
+<Ui xmlns="http://www.blizzard.com/wow/ui/" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.blizzard.com/wow/ui/
+..\FrameXML\UI.xsd">
+
+	<!-- Unit button spawned by the secure group headers. Left = target, right = unit menu
+	     via wildcard attributes; ClickCast.lua layers user bindings on top (exact-match
+	     attributes such as "shift-type1" always win over the "*type1" wildcard). -->
+	<Button name="ClickwiseUnitButtonTemplate" inherits="SecureUnitButtonTemplate" virtual="true">
+		<Scripts>
+			<OnLoad>
+				self:RegisterForClicks("AnyUp");
+				self:SetAttribute("*type1", "target");
+				self:SetAttribute("*type2", "menu");
+			</OnLoad>
+		</Scripts>
+	</Button>
+
+</Ui>

@@ -1,0 +1,12 @@
+# Ignore everything at the repo root except the addon itself.
+/*
+
+# Tracked on purpose
+!/.gitignore
+!/README.md
+!/Clickwise/
+
+# Optional: uncomment to also publish the dev tooling and notes
+#!/tools/
+#!/sync-to-wow.ps1
+#!/lessonslearned.md

@@ -1,0 +1,29 @@
+## Interface: 30300
+## Title: Clickwise
+## Notes: Compact party/raid frames with combat-safe click-casting, range fade, incoming-heal prediction and missing-buff tracking. WotLK 3.3.5 only.
+## Author: Oakbridge Software
+## Version: 0.1.0
+## SavedVariables: ClickwiseDB
+## X-Category: UnitFrame
+
+embeds.xml
+
+Locale\enUS.lua
+
+Compat.lua
+Core.lua
+Templates.lua
+templates.xml
+Range.lua
+HealPred.lua
+BuffData.lua
+Buffs.lua
+CombatColor.lua
+UnitFrame.lua
+ClickCast.lua
+Frames.lua
+Config.lua
+ConfigBindings.lua
+ConfigBuffs.lua
+ConfigAssign.lua
+Options.lua
