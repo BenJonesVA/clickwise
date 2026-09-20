@@ -23,6 +23,7 @@ CombatColor.lua
 UnitFrame.lua
 ClickCast.lua
 Frames.lua
+Test.lua
 Config.lua
 ConfigBindings.lua
 ConfigBuffs.lua

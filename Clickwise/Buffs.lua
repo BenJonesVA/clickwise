@@ -45,8 +45,11 @@ CW.Buffs = Buffs
 
 local L = LibStub("AceLocale-3.0"):GetLocale("Clickwise")
 local pairs, ipairs, type = pairs, ipairs, type
-local UnitAura, UnitIsUnit, UnitGUID, UnitIsPlayer = UnitAura, UnitIsUnit, UnitGUID, UnitIsPlayer
-local UnitIsConnected, UnitIsDeadOrGhost = UnitIsConnected, UnitIsDeadOrGhost
+-- unit queries come from CW.API so that Test.lua's invented units answer them (see Compat.lua)
+local API = CW.API
+local UnitAura, UnitIsUnit, UnitGUID, UnitIsPlayer = API.UnitAura, API.UnitIsUnit, API.UnitGUID, API.UnitIsPlayer
+local UnitIsConnected, UnitIsDeadOrGhost = API.UnitIsConnected, API.UnitIsDeadOrGhost
+local UnitClass, UnitName, UnitExists, UnitAffectingCombat = API.UnitClass, API.UnitName, API.UnitExists, API.UnitAffectingCombat
 local GetSpellInfo, GetTime = GetSpellInfo, GetTime
 local InCombatLockdown = InCombatLockdown
 local cos, pi = math.cos, math.pi
@@ -90,6 +93,37 @@ local enabled, showSatisfied, warnSeconds = true, false, 0
 local dirty, flushScheduled = {}, false
 local watch = {}         -- [button] = true while it has a buff in (or about to enter) its expiry warning
 local NONE = {}
+
+-- The assignment walk (see the header comment) over a rule and a unit's group states. Returns the entries still
+-- to do and the entries the player already provides, both in rule order. When `notes` is given, one line per rule
+-- entry is added saying what became of it (the `/cw buffs` diagnostic).
+local function WalkRule(rule, state, notes)
+	local todo, dones, claimed = {}, {}, {}
+	for _, key in ipairs(rule) do
+		local entry = info[key]
+		local slot = entry.slot
+		if slot and claimed[slot] then
+			if notes then
+				notes[#notes + 1] = ("%s: skipped - it replaces %s (same slot %s), so they are alternatives"):format(
+					entry.label, info[claimed[slot]].label, slot)
+			end
+		else
+			local have = state[key]
+			if have == MINE then
+				dones[#dones + 1] = key
+				if slot then claimed[slot] = key end
+				if notes then notes[#notes + 1] = entry.label .. ": yours, satisfied" end
+			elseif have == nil then
+				todo[#todo + 1] = key
+				if slot then claimed[slot] = key end
+				if notes then notes[#notes + 1] = entry.label .. ": missing, to do (" .. entry.spell .. ")" end
+			elseif notes then
+				notes[#notes + 1] = entry.label .. ": provided by someone else, skipped"
+			end
+		end
+	end
+	return todo, dones
+end
 
 --------------------------------------------------------------------------------
 -- Saved settings. profile.buffs.classes[CLASS][GROUP] = {enabled = bool|nil, order = {names}|nil}
@@ -179,6 +213,12 @@ function Buffs:GetKnownOrder(key)
 		if CW.KnowsSpell(name) then out[#out + 1] = name end
 	end
 	return out
+end
+
+-- The group key and exclusive slot (or nil) of a buff spell name; nil for a spell no group lists. (Test.lua uses it
+-- to make a pretend cast land.)
+function Buffs:SpellGroup(name)
+	return groupOf[name], slotOf[name]
 end
 
 -- Highest-priority spell of the group that the player knows, or nil.
@@ -391,6 +431,15 @@ function Buffs:DumpUnit(unit)
 			i, name, tostring(caster), tostring(spellId), groupOf[name] or "-")
 	end
 	if #lines == 1 then lines[2] = "No buffs on " .. unit .. "." end
+	-- how the rule's entries were sorted for the frame showing this unit
+	local set = UnitGUID(unit) and CW.UnitFrame.guidFrames[UnitGUID(unit)]
+	local btn = set and next(set)
+	if btn and btn.cwRule and btn.cwBuffState then
+		local notes = {}
+		WalkRule(btn.cwRule, btn.cwBuffState, notes)
+		lines[#lines + 1] = "assignment walk (an Assigned buff click casts: " .. tostring(btn.cwAssignedSpell) .. ")"
+		for _, note in ipairs(notes) do lines[#lines + 1] = "  " .. note end
+	end
 	return lines
 end
 
@@ -440,10 +489,11 @@ function Buffs:Rebuild()
 	end
 end
 
--- The rule list that applies to a unit: its role, then its class, then "ALL". Second return value:
+-- The rule list that applies to a unit: "SELF" for the player's own frame, else its role, then its class, then "ALL". Second return value:
 -- the target key that matched (shown by /cw buffs).
 function Buffs:FindRule(unit)
 	if not (hasRules and unit and UnitIsPlayer(unit)) then return nil end
+	if ruleLists.SELF and UnitIsUnit(unit, "player") then return ruleLists.SELF, "SELF" end
 	local role = CW.GetUnitRole(unit)
 	if role and ruleLists["ROLE:" .. role] then return ruleLists["ROLE:" .. role], "ROLE:" .. role end
 	local _, class = UnitClass(unit)
@@ -576,20 +626,7 @@ function Buffs:Scan(btn)
 	-- missing (to do)
 	local rule = btn.cwRule
 	if rule then
-		local todo, dones, claimed = {}, {}, {}
-		for _, key in ipairs(rule) do
-			local slot = info[key].slot
-			if not (slot and claimed[slot]) then
-				local have = state[key]
-				if have == MINE then
-					dones[#dones + 1] = key
-					if slot then claimed[slot] = true end
-				elseif have == nil then
-					todo[#todo + 1] = key
-					if slot then claimed[slot] = true end
-				end
-			end
-		end
+		local todo, dones = WalkRule(rule, state)
 		btn.cwTodo, btn.cwDones = todo, dones
 		btn.cwChain, btn.cwDone = todo[1], dones[1]
 		-- the click always has something to cast: the first missing entry, else re-buff the first the player

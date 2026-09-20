@@ -260,6 +260,9 @@ function CW:SlashCommand(input)
 		for _, line in ipairs(CW.Debuffs:Describe()) do
 			self:Print(line)
 		end
+	elseif cmd == "test" then
+		-- a made-up group to try the frames without other players (Test.lua)
+		CW.Test:Command(rest)
 	elseif cmd == "buffcheck" then
 		-- debugging aid: verify the buff spell IDs in BuffData.lua against this client
 		self:Print(CW.Buffs:CheckMacroSupport())
@@ -283,6 +286,6 @@ function CW:SlashCommand(input)
 			self:Print("Settings window files were not loaded. Fully restart the game client (a /reload is not enough after files are added to the .toc).")
 		end
 	else
-		self:Print("/cw [config] | lock | unlock | reset | binds | bind <key> <spell> | unbind <key> | resetbinds | buffs [unit] | buffcheck | debuffs [unit] | dispels")
+		self:Print("/cw [config] | lock | unlock | reset | binds | bind <key> <spell> | unbind <key> | resetbinds | buffs [unit] | buffcheck | debuffs [unit] | dispels | test [5|10|25|40|off|combat]")
 	end
 end

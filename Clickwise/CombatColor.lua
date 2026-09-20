@@ -24,9 +24,11 @@ local CW = Clickwise
 local CombatColor = CW:NewModule("CombatColor", "AceEvent-3.0", "AceTimer-3.0")
 CW.CombatColor = CombatColor
 
-local UnitHealth, UnitHealthMax, UnitIsPlayer, UnitAffectingCombat = UnitHealth, UnitHealthMax, UnitIsPlayer, UnitAffectingCombat
-local UnitThreatSituation, UnitDetailedThreatSituation = UnitThreatSituation, UnitDetailedThreatSituation
-local UnitExists, UnitCanAttack = UnitExists, UnitCanAttack
+-- unit queries come from CW.API so that Test.lua's invented units answer them (see Compat.lua)
+local API = CW.API
+local UnitHealth, UnitHealthMax, UnitIsPlayer, UnitAffectingCombat = API.UnitHealth, API.UnitHealthMax, API.UnitIsPlayer, API.UnitAffectingCombat
+local UnitThreatSituation, UnitDetailedThreatSituation = API.UnitThreatSituation, API.UnitDetailedThreatSituation
+local UnitExists, UnitCanAttack, UnitGUID = API.UnitExists, API.UnitCanAttack, API.UnitGUID
 
 local POLL = 0.5
 

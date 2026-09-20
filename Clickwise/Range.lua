@@ -10,9 +10,11 @@ local Range = CW:NewModule("Range", "AceEvent-3.0")
 CW.Range = Range
 
 local pairs = pairs
-local UnitIsUnit, UnitIsConnected, UnitIsDeadOrGhost = UnitIsUnit, UnitIsConnected, UnitIsDeadOrGhost
-local UnitInRange, UnitIsVisible = UnitInRange, UnitIsVisible
-local IsSpellInRange, CheckInteractDistance = IsSpellInRange, CheckInteractDistance
+-- unit queries come from CW.API so that Test.lua's invented units answer them (see Compat.lua)
+local API = CW.API
+local UnitIsUnit, UnitIsConnected, UnitIsDeadOrGhost = API.UnitIsUnit, API.UnitIsConnected, API.UnitIsDeadOrGhost
+local UnitInRange, UnitIsVisible = API.UnitInRange, API.UnitIsVisible
+local IsSpellInRange, CheckInteractDistance = API.IsSpellInRange, API.CheckInteractDistance
 local GetSpellInfo = GetSpellInfo
 
 -- spell IDs are used (locale-safe); the localized name is resolved at runtime.

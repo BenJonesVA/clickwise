@@ -127,6 +127,7 @@ L["Assignments"] = true
 L["Clear this rule"] = true
 L["Damage dealers"] = true
 L["Everyone else"] = true
+L["Self"] = true
 L["Healers"] = true
 L["Buffs the unit lacks are cast in this order, one per click. Buffs that replace each other (a paladin's blessings) are alternatives: the first one nobody else provides."] = true
 L["No assignments yet - set them up in the Assignments tab."] = true
@@ -134,7 +135,7 @@ L["Tanks"] = true
 L["Who gets which buff"] = true
 
 -- Buff tracking
-L["Bind a click to 'Assigned buff' in the Bindings tab (it starts as out of combat only; 'Cast when' changes that). A unit uses its role's rule, else its class's, else Everyone else. If a tank is not recognised as one, use a class rule."] = true
+L["Bind a click to 'Assigned buff' in the Bindings tab (it starts as out of combat only; 'Cast when' changes that). Your own frame uses the Self rule; any other unit its role's rule, else its class's, else Everyone else. If a tank is not recognised as one, use a class rule."] = true
 
 -- Buff tracking
 L["A buff you cast pulses on the frame, faster as it runs out, and is solid once it is gone. 0 turns the warning off."] = true
@@ -202,3 +203,19 @@ L["Otherwise this click targets the unit."] = true
 L["Otherwise this click: %s"] = true
 L["Removes: %s"] = true
 L["You know no spell that removes debuffs - this does nothing until you do."] = true
+
+-- Test mode (Test.lua)
+L["Test group: the frames are not built yet."] = true
+L["Test group: %d made-up members, shown below your frames. Click one to see what your click would cast. /cw test combat switches combat colors, /cw test off ends it."] = true
+L["Test group off."] = true
+L["Test combat on."] = true
+L["Test combat off."] = true
+L["Start a test group first: /cw test"] = true
+L["Usage: /cw test [5|10|25|40|off|combat]"] = true
+L["Test: your click casts %s on %s."] = true
+L["Test: your click casts nothing on %s right now."] = true
+L["Test: your click targets %s."] = true
+L["Test: your click opens the unit menu (not available on test frames)."] = true
+L["Test: your click does %s, which test frames cannot show."] = true
+L["Test group"] = true
+L["Test combat"] = true

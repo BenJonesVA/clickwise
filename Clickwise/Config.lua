@@ -202,6 +202,14 @@ local function BuildGeneral(page)
 	Config.NewSlider(page, 8, -330, L["Yellow at health (%)"], {"combatColor", "yellow"}, 5, 100, 5, "%d", 190)
 	Config.NewSlider(page, 230, -330, L["Red below health (%)"], {"combatColor", "red"}, 0, 95, 5, "%d", 190)
 	Config.NewSlider(page, 452, -330, L["Threat warning (%)"], {"combatColor", "threat"}, 10, 100, 5, "%d", 170)
+
+	-- a made-up group to try the frames without other players (Test.lua)
+	Config.NewLabel(page, 8, -388, L["Test group"])
+	for i, n in ipairs(CW.Test.SIZES) do
+		Config.NewButton(page, 100 + (i - 1) * 52, -384, 48, tostring(n), function() CW.Test:Start(n) end)
+	end
+	Config.NewButton(page, 100 + #CW.Test.SIZES * 52, -384, 48, L["Off"], function() CW.Test:Stop() end)
+	Config.NewButton(page, 100 + (#CW.Test.SIZES + 1) * 52, -384, 110, L["Test combat"], function() CW.Test:ToggleCombat() end)
 end
 
 local HEALTH_TEXT = {

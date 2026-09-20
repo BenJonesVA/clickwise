@@ -82,9 +82,11 @@ CW.BuffGroups = {
 }
 
 -- Who an assignment rule (Assignments tab) can target. When resolving a unit the most specific rule
--- wins: its role, then its class, then "ALL". Roles are the ones CW.GetUnitRole reports.
+-- wins: "SELF" (the player's own frame), then its role, then its class, then "ALL". Roles are the ones
+-- CW.GetUnitRole reports.
 CW.BuffTargets = {
 	{key = "ALL", label = L["Everyone else"]},
+	{key = "SELF", label = L["Self"]},
 	{key = "ROLE:TANK", label = L["Tanks"]},
 	{key = "ROLE:HEALER", label = L["Healers"]},
 	{key = "ROLE:DAMAGER", label = L["Damage dealers"]},

@@ -18,6 +18,8 @@ HealPred.available = HealComm and true or false
 
 -- Effective incoming heal (after healing-taken modifiers) for a unit GUID.
 function HealPred:GetIncoming(guid)
+	local fake = guid and CW.fakeGuid[guid] -- an invented unit (Test.lua) carries its own incoming heal
+	if fake then return enabled and fake.incoming or 0 end
 	if not (HealComm and enabled and guid) then
 		return 0
 	end

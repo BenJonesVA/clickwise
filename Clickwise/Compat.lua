@@ -49,6 +49,85 @@ function CW.GetGroupType()
 end
 
 --------------------------------------------------------------------------------
+-- Unit queries. Test mode (Test.lua) invents units ("cwtest1", ...) that the game has never heard of. Every
+-- query the addon makes about a unit that can be a frame's unit goes through CW.API: an invented unit is
+-- answered from CW.fake, anything else by the game. Files take their local copies from here
+-- (`local UnitAura = CW.API.UnitAura`), so a query made on such a unit has to be listed here first, or test
+-- mode cannot show whatever depends on it. Where the game has no such function the entry is nil, so a
+-- `if UnitInRange then` test still means what it did.
+--------------------------------------------------------------------------------
+CW.fake = {}     -- [unit token] = an invented unit (fields: see Test.lua)
+CW.fakeGuid = {} -- [guid] = the same invented unit
+local fake = CW.fake
+local API = {}
+CW.API = API
+
+local ANSWERS = { -- what an invented unit answers to a query about itself
+	UnitExists = function() return true end,
+	UnitGUID = function(u) return u.guid end,
+	UnitName = function(u) return u.name end,
+	UnitClass = function(u) return u.classLoc, u.class end,
+	UnitIsPlayer = function() return true end,
+	UnitIsConnected = function(u) return u.online end,
+	UnitIsDeadOrGhost = function(u) return u.dead end,
+	UnitIsGhost = function(u) return u.ghost end,
+	UnitHealth = function(u) return u.dead and 0 or u.health end,
+	UnitHealthMax = function(u) return u.healthMax end,
+	UnitAffectingCombat = function(u) return u.fighting end,
+	UnitGroupRolesAssigned = function(u) return u.role == "TANK", u.role == "HEALER", u.role == "DAMAGER" end,
+	UnitThreatSituation = function(u) return u.threat end,
+	UnitDetailedThreatSituation = function(u) return u.threat >= 2, u.threat, u.threatPct, u.threatPct, 0 end,
+	UnitCanAttack = function() return false end,
+	UnitInRange = function(u) return u.inRange end,
+	UnitIsVisible = function(u) return u.online end,
+	CheckInteractDistance = function(u) return u.inRange end,
+}
+for name, answer in pairs(ANSWERS) do
+	local real = _G[name]
+	if real then
+		API[name] = function(unit, ...)
+			local u = fake[unit] -- (a nil or odd `unit` just misses)
+			if u then return answer(u, unit, ...) end
+			return real(unit, ...)
+		end
+	end
+end
+
+-- the ones whose arguments do not fit that shape
+local realIsUnit, realInRange, realAura = UnitIsUnit, IsSpellInRange, UnitAura
+if realIsUnit then
+	API.UnitIsUnit = function(a, b)
+		if fake[a] or fake[b] then return a == b end -- an invented unit is only ever itself
+		return realIsUnit(a, b)
+	end
+end
+if realInRange then
+	API.IsSpellInRange = function(spell, unit, ...)
+		local u = fake[unit]
+		if u then return u.inRange and 1 or 0 end
+		return realInRange(spell, unit, ...)
+	end
+end
+if realAura then
+	-- an invented unit's auras: u.buffs / u.debuffs = {{name, icon, count, type, duration, expires, caster}}; one
+	-- whose expiration time has passed is simply gone, like on a real unit
+	API.UnitAura = function(unit, index, filter, ...)
+		local u = fake[unit]
+		if not u then return realAura(unit, index, filter, ...) end
+		local list = (filter and filter:find("HARMFUL", 1, true)) and u.debuffs or u.buffs
+		local now, n = GetTime(), 0
+		for _, a in ipairs(list) do
+			if not (a.expires and a.expires > 0 and a.expires <= now) then
+				n = n + 1
+				if n == index then
+					return a.name, "", a.icon, a.count or 1, a.type, a.duration or 0, a.expires or 0, a.caster, nil, nil, a.spellId
+				end
+			end
+		end
+	end
+end
+
+--------------------------------------------------------------------------------
 -- Textures / colors
 --------------------------------------------------------------------------------
 -- SetColorTexture does not exist on 3.3.5; the old SetTexture(r,g,b,a) form does.
@@ -147,6 +226,8 @@ end
 -- Chain: LFD role -> raid Main Tank assignment -> class shortcut -> LibGroupTalents.
 -- Returns "TANK", "HEALER", "DAMAGER" or nil when unknown.
 --------------------------------------------------------------------------------
+local UnitExists, UnitIsPlayer, UnitGroupRolesAssigned, UnitName, UnitClass =
+	API.UnitExists, API.UnitIsPlayer, API.UnitGroupRolesAssigned, API.UnitName, API.UnitClass
 local LGT
 local LGT_ROLE = {tank = "TANK", healer = "HEALER", melee = "DAMAGER", caster = "DAMAGER"}
 local PURE_DAMAGE = {HUNTER = true, MAGE = true, ROGUE = true, WARLOCK = true}

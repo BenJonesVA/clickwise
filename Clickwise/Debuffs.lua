@@ -21,8 +21,10 @@ CW.Debuffs = Debuffs
 
 local L = LibStub("AceLocale-3.0"):GetLocale("Clickwise")
 local pairs, ipairs, type = pairs, ipairs, type
-local UnitAura, UnitGUID, UnitExists = UnitAura, UnitGUID, UnitExists
-local UnitIsConnected, UnitIsDeadOrGhost = UnitIsConnected, UnitIsDeadOrGhost
+-- unit queries come from CW.API so that Test.lua's invented units answer them (see Compat.lua)
+local API = CW.API
+local UnitAura, UnitGUID, UnitExists = API.UnitAura, API.UnitGUID, API.UnitExists
+local UnitIsConnected, UnitIsDeadOrGhost = API.UnitIsConnected, API.UnitIsDeadOrGhost
 local GetSpellInfo = GetSpellInfo
 
 local FLUSH_DELAY = 0.2 -- UNIT_AURA is spammy in raids; coalesce per GUID (as Buffs.lua does)

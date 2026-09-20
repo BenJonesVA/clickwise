@@ -5,7 +5,8 @@
 --   right : the selected target's ordered buff list (highest priority first) with Up / Down / Remove,
 --           an "Add" dropdown of the groups this character can cast, and Clear rule
 --
--- Resolution (Buffs.lua): a unit uses the rule of its role, else of its class, else "Everyone else".
+-- Resolution (Buffs.lua): the player's own frame uses the "Self" rule, any other unit the rule of its role,
+-- else of its class, else "Everyone else".
 -- Every buff in the list the unit does not already have (from anyone) is shown on its frame, and an
 -- "Assigned buff" binding casts the first of them (out of combat unless the binding says otherwise); the next
 -- click casts the next. Buffs that replace each other (a paladin's blessings) are alternatives.
@@ -122,7 +123,7 @@ local function Build(page)
 		Refresh()
 	end)
 	local note = Config.NewLabel(page, FORM_X, -336,
-		L["Bind a click to 'Assigned buff' in the Bindings tab (it starts as out of combat only; 'Cast when' changes that). A unit uses its role's rule, else its class's, else Everyone else. If a tank is not recognised as one, use a class rule."],
+		L["Bind a click to 'Assigned buff' in the Bindings tab (it starts as out of combat only; 'Cast when' changes that). Your own frame uses the Self rule; any other unit its role's rule, else its class's, else Everyone else. If a tank is not recognised as one, use a class rule."],
 		"GameFontHighlightSmall")
 	note:SetWidth(290)
 

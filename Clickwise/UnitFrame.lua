@@ -19,8 +19,11 @@ local LSM = LibStub("LibSharedMedia-3.0", true)
 local LGT
 
 local pairs, floor, min = pairs, math.floor, math.min
-local UnitHealth, UnitHealthMax, UnitGUID, UnitName, UnitClass = UnitHealth, UnitHealthMax, UnitGUID, UnitName, UnitClass
-local UnitIsDeadOrGhost, UnitIsConnected, UnitIsGhost, UnitIsPlayer, UnitIsUnit = UnitIsDeadOrGhost, UnitIsConnected, UnitIsGhost, UnitIsPlayer, UnitIsUnit
+-- unit queries come from CW.API so that Test.lua's invented units answer them (see Compat.lua)
+local API = CW.API
+local UnitHealth, UnitHealthMax, UnitGUID, UnitName, UnitClass = API.UnitHealth, API.UnitHealthMax, API.UnitGUID, API.UnitName, API.UnitClass
+local UnitIsDeadOrGhost, UnitIsConnected, UnitIsGhost, UnitIsPlayer, UnitIsUnit = API.UnitIsDeadOrGhost, API.UnitIsConnected, API.UnitIsGhost, API.UnitIsPlayer, API.UnitIsUnit
+local UnitExists = API.UnitExists
 local InCombatLockdown = InCombatLockdown
 local SecureButton_GetModifiedUnit = SecureButton_GetModifiedUnit
 
@@ -148,7 +151,13 @@ end
 function UnitFrame:ShowTooltip(btn)
 	hovered = btn
 	if CW.db.profile.tooltip.mode == "OFF" or not (btn.unit and UnitExists(btn.unit)) then return end
-	UnitFrame_OnEnter(btn) -- Blizzard's: anchor and the standard unit tooltip
+	if btn.cwFakeUnit then
+		-- an invented unit (Test.lua): the game cannot build a unit tooltip for it, so start one by hand
+		GameTooltip_SetDefaultAnchor(GameTooltip, btn)
+		GameTooltip:AddLine(UnitName(btn.unit), CW.GetClassColor(select(2, UnitClass(btn.unit))))
+	else
+		UnitFrame_OnEnter(btn) -- Blizzard's: anchor and the standard unit tooltip
+	end
 	if GameTooltip:GetOwner() ~= btn then return end -- it declined (e.g. while targeting a spell)
 	local lines = self:TooltipLines(btn) -- (an error here still leaves the standard tooltip up)
 	for _, line in ipairs(lines) do
@@ -163,7 +172,7 @@ end
 
 function UnitFrame:HideTooltip(btn)
 	if hovered == btn then hovered = nil end
-	UnitFrame_OnLeave(btn)
+	if btn.cwFakeUnit then GameTooltip:Hide() else UnitFrame_OnLeave(btn) end
 end
 
 -- A frame hidden under the mouse (its unit left the group) gets no OnLeave: take its tooltip down.
@@ -196,7 +205,8 @@ local function CreateBar(btn, levelOffset)
 	return bar
 end
 
-function UnitFrame:InitButton(btn)
+-- demo: a Test.lua button, a plain button that is not a secure header child (no unit watch: it shows an invented unit)
+function UnitFrame:InitButton(btn, demo)
 	if btn.cwInit then return end
 	btn.cwInit = true
 	self.frames[btn] = true
@@ -239,7 +249,7 @@ function UnitFrame:InitButton(btn)
 	end)
 
 	-- Hide the button automatically when its unit stops existing (secure, works in combat).
-	RegisterUnitWatch(btn)
+	if not demo then RegisterUnitWatch(btn) end
 
 	self:LayoutButton(btn)
 
@@ -283,7 +293,7 @@ end
 --------------------------------------------------------------------------------
 -- Resolve the button's current unit (vehicle-aware) and re-index it by GUID.
 function UnitFrame:UpdateUnit(btn)
-	local unit = SecureButton_GetModifiedUnit(btn)
+	local unit = btn.cwFakeUnit or SecureButton_GetModifiedUnit(btn) -- (cwFakeUnit: a Test.lua button)
 	btn.unit = unit
 
 	local guid = unit and UnitGUID(unit) or nil

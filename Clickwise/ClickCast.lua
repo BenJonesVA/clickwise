@@ -39,7 +39,7 @@ CW.ClickCast = ClickCast
 
 local L = LibStub("AceLocale-3.0"):GetLocale("Clickwise")
 local pairs, ipairs, tinsert = pairs, ipairs, table.insert
-local InCombatLockdown, UnitAffectingCombat = InCombatLockdown, UnitAffectingCombat
+local InCombatLockdown, UnitAffectingCombat = InCombatLockdown, CW.API.UnitAffectingCombat -- (the API's: see Compat.lua)
 
 local BUTTON_NAMES = {["1"] = "Left", ["2"] = "Right", ["3"] = "Middle", ["4"] = "Button4", ["5"] = "Button5"}
 local COMBAT_POLL = 0.5 -- seconds between reads of every frame's unit combat state (only while a gated binding exists)
