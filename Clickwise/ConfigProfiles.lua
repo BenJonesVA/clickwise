@@ -114,7 +114,9 @@ local function Build(page)
 		CW:Print((L["Copied the settings of %s."]):format(S.copyFrom))
 		Changed()
 	end)
-	Config.NewLabel(page, 470, -214, L["Replaces everything in the profile in use."], "GameFontHighlightSmall")
+	-- (what is left of the row is 160 units wide: the note wraps to two lines instead of running out of the window)
+	local replaces = Config.NewLabel(page, 470, -211, L["Replaces everything in the profile in use."], "GameFontHighlightSmall")
+	replaces:SetWidth(160)
 
 	-- reset ----------------------------------------------------------------------------
 	Config.NewButton(page, 0, -252, 220, L["Reset this profile"], function()

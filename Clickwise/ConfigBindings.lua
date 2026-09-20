@@ -395,8 +395,10 @@ local function Build(page)
 		if userInput then UpdateStatus() end
 	end)
 	macroSection[#macroSection + 1] = macroFrame
-	macroSection[#macroSection + 1] = Config.NewLabel(page, FORM_X, -286,
+	local macroTip = Config.NewLabel(page, FORM_X, -286,
 		L["Tip: [target=mouseover] in a macro acts on the frame under the cursor."], "GameFontHighlightSmall")
+	macroTip:SetWidth(632 - FORM_X) -- (wraps at the page's right edge)
+	macroSection[#macroSection + 1] = macroTip
 
 	-- buff group section -------------------------------------------------------
 	local buffSection = {}

@@ -17,6 +17,7 @@ CW.Config = Config
 Config.builders = {} -- page key -> function(page); filled by ConfigBindings.lua etc.
 
 local WINDOW_W, WINDOW_H = 680, 520
+local TAB_W = 88 -- seven tabs: 24 + 7 * 92 still fits the window
 
 local nameCounter = 0
 function Config.UniqueName(prefix)
@@ -150,6 +151,26 @@ function Config.NewButton(parent, x, y, width, label, onClick)
 	return b
 end
 
+-- A line that shows while a role's look is on: the sliders and boxes on the General and Layout tabs still edit the
+-- ordinary settings, which that look stands in for. It sits at the very top of the page, above the first slider in
+-- the right-hand column: that slider's label is drawn just over the slider (about 18 to 30 units down), and a notice
+-- lower than this ran over it.
+local NOTICE_Y, NOTICE_H = -1, 12
+function Config.NewLookNotice(page, x)
+	local holder = CreateFrame("Frame", nil, page)
+	holder:SetSize(330, NOTICE_H)
+	holder:SetPoint("TOPLEFT", page, "TOPLEFT", x, NOTICE_Y)
+	local fs = holder:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
+	fs:SetAllPoints(holder)
+	fs:SetJustifyH("LEFT")
+	function holder:Refresh()
+		fs:SetText(CW:LookRole() and ("|cffffcc00" .. L["A role look is on (Role look tab)."] .. "|r") or "")
+	end
+	page.controls[#page.controls + 1] = holder
+	page.cwLookNotice, page.cwLookNoticeHolder = fs, holder
+	return holder
+end
+
 --------------------------------------------------------------------------------
 -- Pages
 --------------------------------------------------------------------------------
@@ -180,6 +201,7 @@ local function BuildGeneral(page)
 	Config.NewCheck(page, 4, -92, L["Incoming heal prediction"], {"healPred", "enabled"})
 	Config.NewCheck(page, 4, -120, L["Include my own heals"], {"healPred", "includeOwn"})
 
+	Config.NewLookNotice(page, 340)
 	Config.NewSlider(page, 340, -30, L["Out-of-range alpha"], {"range", "alpha"}, 0.1, 0.9, 0.05, "%.2f")
 	Config.NewSlider(page, 340, -90, L["Heal look-ahead (seconds)"], {"healPred", "timeFrame"}, 1, 10, 1, "%d")
 
@@ -297,12 +319,14 @@ local function BuildLayout(page)
 		"GameFontHighlightSmall")
 	threatNote:SetWidth(310)
 
+	Config.NewLookNotice(page, 340)
 	Config.NewSlider(page, 340, -30, L["Scale"], {"scale"}, 0.5, 2, 0.05, "%.2f")
 	Config.NewSlider(page, 340, -90, L["Frame width"], {"frame", "width"}, 40, 160, 1, "%d")
 	Config.NewSlider(page, 340, -150, L["Frame height"], {"frame", "height"}, 20, 80, 1, "%d")
 	Config.NewSlider(page, 340, -210, L["Frame spacing"], {"frame", "spacing"}, 0, 10, 1, "%d")
 	Config.NewSlider(page, 340, -270, L["Group spacing"], {"frame", "groupSpacing"}, 0, 30, 1, "%d")
 	Config.NewSlider(page, 340, -330, L["Name size"], {"frame", "nameSize"}, 6, 20, 1, "%d")
+	Config.NewCheck(page, 336, -384, L["Threat bar on tanks too"], {"threat", "barOnTanks"})
 end
 
 --------------------------------------------------------------------------------
@@ -315,6 +339,7 @@ local TABS = {
 	{key = "buffs", label = L["Buffs"]}, -- builder registered by ConfigBuffs.lua
 	{key = "assign", label = L["Assignments"]}, -- builder registered by ConfigAssign.lua
 	{key = "profiles", label = L["Profiles"]}, -- builder registered by ConfigProfiles.lua
+	{key = "rolelook", label = L["Role look"]}, -- builder registered by ConfigRoleLook.lua
 }
 
 function Config:SelectTab(index)
@@ -380,11 +405,11 @@ function Config:Build()
 	local x = 24
 	for i, tab in ipairs(TABS) do
 		local b = CreateFrame("Button", "ClickwiseConfigTab" .. i, f, "UIPanelButtonTemplate")
-		b:SetSize(100, 24)
+		b:SetSize(TAB_W, 24)
 		b:SetPoint("TOPLEFT", f, "TOPLEFT", x, -44)
 		b:SetText(tab.label)
 		b:SetScript("OnClick", function() Config:SelectTab(i) end)
-		x = x + 104
+		x = x + TAB_W + 4
 		tab.button = b
 
 		local page = CreateFrame("Frame", nil, f)

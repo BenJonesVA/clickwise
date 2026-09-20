@@ -178,6 +178,7 @@ function Test:Layout()
 	if not (c and count) then return end
 	local db = CW.db.profile
 	local f = db.frame
+	local width, height = CW:Look("width"), CW:Look("height")
 	local anchor = CW.Frames.container
 	c:SetScale(anchor:GetScale())
 	c:ClearAllPoints()
@@ -187,11 +188,11 @@ function Test:Layout()
 		local g, k = floor((i - 1) / 5), (i - 1) % 5
 		local x, y
 		if db.horizontal then
-			x, y = k * (f.width + f.spacing), -g * (f.height + f.groupSpacing)
+			x, y = k * (width + f.spacing), -g * (height + f.groupSpacing)
 		else
-			x, y = g * (f.width + f.groupSpacing), -k * (f.height + f.spacing)
+			x, y = g * (width + f.groupSpacing), -k * (height + f.spacing)
 		end
-		btn:SetSize(f.width, f.height)
+		btn:SetSize(width, height)
 		btn:ClearAllPoints()
 		btn:SetPoint("TOPLEFT", c, "TOPLEFT", x, y)
 	end

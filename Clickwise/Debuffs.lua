@@ -221,7 +221,7 @@ end
 function Debuffs:LayoutButton(btn)
 	local icon = btn.cwDebuffIcon
 	if not icon then return end
-	local size = math.max(8, math.min(14, math.floor(CW.db.profile.frame.height * 0.36)))
+	local size = math.max(8, math.min(14, math.floor(CW:Look("height") * 0.36)))
 	icon:SetSize(size, size)
 end
 
@@ -243,7 +243,7 @@ function Debuffs:Paint(btn)
 		CW.SetSolidColor(edges[i], c[1] * k, c[2] * k, c[3] * k, 1)
 		edges[i]:Show()
 	end
-	if CW.db.profile.debuffs.icon and d.icon then
+	if CW:Look("debuffIcon") and d.icon then
 		btn.cwDebuffIcon:SetTexture(d.icon)
 		btn.cwDebuffIcon:Show()
 	else

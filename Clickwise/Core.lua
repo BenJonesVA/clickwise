@@ -55,6 +55,7 @@ local defaults = {
 		threat = {
 			border = true, -- a ring around a healer / damage dealer who has, or is about to take, the enemy
 			bar = true,    -- a thin bar along the bottom edge: how far the unit is toward pulling
+			barOnTanks = false, -- the bar also on the frames of tanks (else only on healers and damage dealers)
 		},
 		-- debuff highlight (Debuffs.lua)
 		debuffs = {
@@ -73,6 +74,13 @@ local defaults = {
 			includeOwn = true,
 			timeFrame = 4, -- only count heals landing within this many seconds
 			color = {r = 0.1, g = 0.9, b = 0.3, a = 0.55},
+		},
+		-- A look per role (see CW:Look): while the player plays that role and its look is on, these values stand in for
+		-- the settings named in CW.LOOK_BASE. The other settings are shared by every role.
+		roleLook = {
+			TANK = {enabled = false, width = 72, height = 28, healPred = false, debuffIcon = true, threatBar = true, threatBarTanks = true},
+			HEALER = {enabled = false, width = 96, height = 40, healPred = true, debuffIcon = true, threatBar = true, threatBarTanks = false},
+			DAMAGER = {enabled = false, width = 72, height = 28, healPred = false, debuffIcon = true, threatBar = true, threatBarTanks = false},
 		},
 		-- bindings[CLASS] = user-defined list; a missing class entry = use the class template
 		-- from Templates.lua. Keyed by class because profiles are shared between characters.
@@ -169,6 +177,7 @@ function CW:OnEnable()
 		LGT.RegisterCallback(self, "LibGroupTalents_RoleChange", "OnRoleMayHaveChanged")
 	end
 	self:UpdateGroupType()
+	self:UpdateLookRole()
 end
 
 function CW:OnSpellsChanged()
@@ -208,6 +217,7 @@ end
 -- CLICKWISE_PROFILE:  the whole profile changed, so bindings must be re-applied too.
 --------------------------------------------------------------------------------
 function CW:RefreshProfile()
+	self:UpdateLookRole() -- (the look is part of the profile: the new one may have another look for the role in play)
 	self:RememberSpecProfile()
 	self:RememberRoleProfile()
 	self:SendMessage("CLICKWISE_PROFILE")
@@ -386,9 +396,53 @@ function CW:ApplyRoleProfile()
 	end
 end
 
+-- (the look must follow the role whether or not a profile per role is on, so only the profile part is guarded)
 function CW:OnRoleMayHaveChanged()
-	if not self.db or not self.db.char.roleProfiles.enabled then return end
-	self:RunOOC("role.profile", CW.ApplyRoleProfile, CW)
+	if not self.db then return end
+	if self:UpdateLookRole() then self:RefreshAll() end
+	if self.db.char.roleProfiles.enabled then
+		self:RunOOC("role.profile", CW.ApplyRoleProfile, CW)
+	end
+end
+
+--------------------------------------------------------------------------------
+-- A look per role: one profile that looks different while you tank and while you heal.
+-- profile.roleLook[ROLE] = {enabled, width, height, healPred, debuffIcon, threatBar, threatBarTanks}. While the role
+-- the player plays has its look on, CW:Look(name) answers from it; otherwise from the ordinary settings, which the
+-- General and Layout tabs keep editing (nothing here ever writes to them). Every place that draws with one of these
+-- asks CW:Look. The role is the one CW.GetUnitRole reports; a role that is not known yet (the talents are not
+-- inspected) uses the ordinary settings, never the look of the role played before.
+--------------------------------------------------------------------------------
+CW.LOOK_BASE = {
+	width = {"frame", "width"},
+	height = {"frame", "height"},
+	healPred = {"healPred", "enabled"},
+	debuffIcon = {"debuffs", "icon"},
+	threatBar = {"threat", "bar"},
+	threatBarTanks = {"threat", "barOnTanks"},
+}
+
+-- Re-read the role in play. Answers whether that changed what is shown: the role differs and either look is on.
+function CW:UpdateLookRole()
+	local looks = self.db.profile.roleLook
+	local old, new = self.lookRole, CW.GetUnitRole("player")
+	self.lookRole = new
+	if old == new then return false end
+	return ((old and looks[old] and looks[old].enabled) or (new and looks[new] and looks[new].enabled)) and true or false
+end
+
+-- The role whose look is in use right now, or nil.
+function CW:LookRole()
+	local role = self.lookRole
+	local look = role and self.db.profile.roleLook[role]
+	return (look and look.enabled) and role or nil
+end
+
+function CW:Look(name)
+	local role = self:LookRole()
+	if role then return self.db.profile.roleLook[role][name] end
+	local base = CW.LOOK_BASE[name]
+	return self.db.profile[base[1]][base[2]]
 end
 
 -- Delete a profile (never the one in use); a spec or a role that used it forgets it.
@@ -522,6 +576,10 @@ function CW:SlashCommand(input)
 		self:Print((L["Profiles: %s."]):format(table.concat(self:ProfileNames(), ", ")))
 		if self.db.char.roleProfiles.enabled then
 			self:Print((L["A profile per role is on; you play %s."]):format(CW.GetUnitRole("player") or "?"))
+		end
+		local lookRole = self:LookRole()
+		if lookRole then
+			self:Print((L["The look of the %s role is on."]):format(lookRole))
 		end
 	elseif cmd == "threat" then
 		-- debugging aid: the enemy the threat bar measures against, and each frame's status and percentage

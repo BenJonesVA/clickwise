@@ -284,11 +284,12 @@ end
 function UnitFrame:LayoutButton(btn)
 	local db = CW.db.profile
 	local f = db.frame
+	local width, height = CW:Look("width"), CW:Look("height") -- (a role's look may size the frames)
 
 	if not InCombatLockdown() then
-		btn:SetAttribute("initial-width", f.width)
-		btn:SetAttribute("initial-height", f.height)
-		btn:SetSize(f.width, f.height)
+		btn:SetAttribute("initial-width", width)
+		btn:SetAttribute("initial-height", height)
+		btn:SetSize(width, height)
 	end
 
 	local texture = GetBarTexture()
@@ -300,7 +301,7 @@ function UnitFrame:LayoutButton(btn)
 	local nameSize = f.nameSize or f.fontSize
 	SetTextFont(btn.nameText, UnitFrame.FontPath(f.nameFont), nameSize)
 	btn.statusText:SetFont(STANDARD_TEXT_FONT, f.fontSize - 1, "OUTLINE")
-	btn.cwMaxNameChars = floor((f.width - 4) / (nameSize * 0.55))
+	btn.cwMaxNameChars = floor((width - 4) / (nameSize * 0.55))
 	CW.Buffs:LayoutButton(btn)
 	if CW.Debuffs then CW.Debuffs:LayoutButton(btn) end
 end

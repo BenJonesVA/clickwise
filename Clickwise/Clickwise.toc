@@ -30,4 +30,5 @@ ConfigBindings.lua
 ConfigBuffs.lua
 ConfigAssign.lua
 ConfigProfiles.lua
+ConfigRoleLook.lua
 Options.lua

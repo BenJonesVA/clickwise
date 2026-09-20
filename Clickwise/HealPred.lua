@@ -49,7 +49,7 @@ end
 
 function HealPred:ApplySettings()
 	local db = CW.db.profile.healPred
-	enabled, includeOwn, timeFrame = db.enabled, db.includeOwn, db.timeFrame
+	enabled, includeOwn, timeFrame = CW:Look("healPred"), db.includeOwn, db.timeFrame -- (enabled: a role's look may turn it off)
 	CW:GetModule("UnitFrame"):UpdateAllHealth()
 end
 

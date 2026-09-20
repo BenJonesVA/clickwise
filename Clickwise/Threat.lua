@@ -57,9 +57,10 @@ function Threat.Alert(role, status, scaled, warn)
 	return nil
 end
 
--- The bar's fill (0..100) or nil for no bar: nothing for tanks, and nothing without a percentage to show.
-function Threat.BarFill(role, scaled)
-	if role == "TANK" or not scaled or scaled <= 0 then return nil end
+-- The bar's fill (0..100) or nil for no bar: nothing for tanks unless `onTanks` (the tank's look asks for it), and
+-- nothing without a percentage to show.
+function Threat.BarFill(role, scaled, onTanks)
+	if (role == "TANK" and not onTanks) or not scaled or scaled <= 0 then return nil end
 	if scaled > 100 then return 100 end
 	return scaled
 end
@@ -77,7 +78,7 @@ end
 
 local function Wanted()
 	local s = Settings()
-	return s.border or s.bar
+	return s.border or CW:Look("threatBar")
 end
 
 --------------------------------------------------------------------------------
@@ -239,7 +240,7 @@ function Threat:UpdateButton(btn)
 		pulsing[btn] = nil
 	end
 
-	local fill = s.bar and Threat.BarFill(role, scaled) or nil
+	local fill = CW:Look("threatBar") and Threat.BarFill(role, scaled, CW:Look("threatBarTanks")) or nil
 	if fill then
 		local r, g, b = CW.CombatColor.ThreatColor(status, scaled, Warn())
 		btn.cwThreatBar:SetStatusBarColor(r, g, b)
@@ -258,7 +259,7 @@ end
 -- One line for the hover tooltip, or nil.
 function Threat:TooltipLine(btn)
 	local scaled = btn.cwThreatScaled
-	if not scaled or btn.cwRole == "TANK" then return nil end
+	if not scaled or (btn.cwRole == "TANK" and not CW:Look("threatBarTanks")) then return nil end
 	local r, g, b = CW.CombatColor.ThreatColor(btn.cwThreatStatus, scaled, Warn())
 	return {left = L["Threat"], right = (L["%d%% toward pulling"]):format(floor(scaled + 0.5)), r = r, g = g, b = b}
 end

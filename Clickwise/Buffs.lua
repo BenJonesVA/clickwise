@@ -544,7 +544,7 @@ end
 function Buffs:LayoutButton(btn)
 	local icons = btn.cwBuffIcons
 	if not icons then return end
-	local height = CW.db.profile.frame.height
+	local height = CW:Look("height")
 	local size = math.max(8, math.min(14, math.floor(height * 0.36)))
 	for i = 1, MAX_ICONS do
 		icons[i]:SetSize(size, size)
