@@ -40,6 +40,12 @@ local defaults = {
 			red = 20, -- health: red below this percentage
 			threat = 80, -- threat: yellow once a unit is this far (percent) toward pulling the enemy
 		},
+		-- hover tooltip on the unit frames (UnitFrame.lua)
+		tooltip = {
+			mode = "DETAILED", -- DETAILED | BASIC (Blizzard's unit tooltip only) | OFF
+			buffs = true,      -- DETAILED: buff status (who supplied it, time left)
+			bindings = true,   -- DETAILED: what each click does with the modifier keys held right now
+		},
 		healPred = {
 			enabled = true,
 			includeOwn = true,

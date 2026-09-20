@@ -88,6 +88,97 @@ function UnitFrame.ShowMenu(btn)
 end
 
 --------------------------------------------------------------------------------
+-- Hover tooltip: Blizzard's unit tooltip first (its anchor, name, level and class), then in DETAILED mode
+-- the unit's health / role / range, the buff status (Buffs:TooltipLines) and what each click does with the
+-- modifier keys held right now (ClickCast:TooltipLines). Rebuilt when the mouse enters and when a modifier
+-- key changes; there is no other live refresh (the buttons have no OnUpdate).
+--------------------------------------------------------------------------------
+local hovered -- the button the mouse is over
+local ROLE_TEXT = {TANK = L["Tank"], HEALER = L["Healer"], DAMAGER = L["Damage"]}
+
+-- Lines are {left, right, r, g, b}; a line without `right` is one piece of text in that color.
+function UnitFrame:TooltipLines(btn)
+	local out = {}
+	local t = CW.db.profile.tooltip
+	local unit = btn.unit
+	if t.mode ~= "DETAILED" or not unit then return out end
+
+	local function section(title, lines)
+		out[#out + 1] = {left = " "}
+		out[#out + 1] = {left = title, r = 1, g = 0.82, b = 0}
+		for _, line in ipairs(lines) do out[#out + 1] = line end
+	end
+
+	local cur, max = UnitHealth(unit) or 0, UnitHealthMax(unit) or 0
+	if max > 0 and UnitIsConnected(unit) and not UnitIsDeadOrGhost(unit) then
+		out[#out + 1] = {left = L["Health"], right = ("%s / %s (%d%%)"):format(CW.FormatNumber(cur), CW.FormatNumber(max),
+			floor(cur / max * 100 + 0.5)), r = 1, g = 1, b = 1}
+	end
+	if btn.cwRole and ROLE_TEXT[btn.cwRole] then
+		out[#out + 1] = {left = L["Role"], right = ROLE_TEXT[btn.cwRole], r = 1, g = 1, b = 1}
+	end
+	if btn.cwInRange == false then
+		out[#out + 1] = {left = L["Range"], right = L["Out of range"], r = 1, g = 0.3, b = 0.3}
+	end
+
+	if t.buffs then
+		local lines = CW.Buffs:TooltipLines(btn)
+		if #lines > 0 then section(L["Buffs"], lines) end
+	end
+	if t.bindings then
+		local modifier = CW.MakeModifier(IsAltKeyDown(), IsControlKeyDown(), IsShiftKeyDown())
+		local lines, more = CW.ClickCast:TooltipLines(btn, modifier)
+		if #lines > 0 then
+			local title = L["Click bindings"]
+			local held = CW.ClickCast.ModifierText(modifier)
+			if held ~= "" then title = title .. " (" .. held .. ")" end
+			if more and modifier == "" then
+				lines[#lines + 1] = {left = L["Hold Alt, Ctrl or Shift for more."], r = 0.6, g = 0.6, b = 0.6}
+			end
+			section(title, lines)
+		end
+	end
+	return out
+end
+
+function UnitFrame:ShowTooltip(btn)
+	hovered = btn
+	if CW.db.profile.tooltip.mode == "OFF" or not (btn.unit and UnitExists(btn.unit)) then return end
+	UnitFrame_OnEnter(btn) -- Blizzard's: anchor and the standard unit tooltip
+	if GameTooltip:GetOwner() ~= btn then return end -- it declined (e.g. while targeting a spell)
+	local lines = self:TooltipLines(btn) -- (an error here still leaves the standard tooltip up)
+	for _, line in ipairs(lines) do
+		if line.right then
+			GameTooltip:AddDoubleLine(line.left, line.right, 1, 0.82, 0, line.r or 1, line.g or 1, line.b or 1)
+		else
+			GameTooltip:AddLine(line.left, line.r or 1, line.g or 1, line.b or 1)
+		end
+	end
+	if #lines > 0 then GameTooltip:Show() end -- shown again so the frame grows to fit the added lines
+end
+
+function UnitFrame:HideTooltip(btn)
+	if hovered == btn then hovered = nil end
+	UnitFrame_OnLeave(btn)
+end
+
+-- A frame hidden under the mouse (its unit left the group) gets no OnLeave: take its tooltip down.
+function UnitFrame:OnButtonHide(btn)
+	if hovered == btn then
+		hovered = nil
+		if GameTooltip:GetOwner() == btn then GameTooltip:Hide() end
+	end
+end
+
+-- A modifier key went down / up: the tooltip lists the bindings of the keys held, so rebuild it.
+function UnitFrame:OnModifier()
+	local btn = hovered
+	if btn and btn:IsShown() and GameTooltip:GetOwner() == btn then
+		self:ShowTooltip(btn)
+	end
+end
+
+--------------------------------------------------------------------------------
 -- Widgets
 --------------------------------------------------------------------------------
 local function CreateBar(btn, levelOffset)
@@ -132,9 +223,10 @@ function UnitFrame:InitButton(btn)
 	CW.Buffs:InitButton(btn)
 
 	btn.menu = UnitFrame.ShowMenu
-	btn:SetScript("OnEnter", UnitFrame_OnEnter)
-	btn:SetScript("OnLeave", UnitFrame_OnLeave)
+	btn:SetScript("OnEnter", function(self) UnitFrame:ShowTooltip(self) end)
+	btn:SetScript("OnLeave", function(self) UnitFrame:HideTooltip(self) end)
 	btn:SetScript("OnShow", function(self) UnitFrame:UpdateUnit(self) end)
+	btn:SetScript("OnHide", function(self) UnitFrame:OnButtonHide(self) end)
 	btn:SetScript("OnAttributeChanged", function(self, name)
 		if name == "unit" then
 			UnitFrame:UpdateUnit(self)
@@ -398,6 +490,7 @@ function UnitFrame:OnEnable()
 	self:RegisterEvent("PARTY_MEMBER_ENABLE", "OnUnitHealth")  -- online again
 	self:RegisterEvent("PARTY_MEMBER_DISABLE", "OnUnitHealth") -- went offline
 	self:RegisterEvent("PLAYER_TARGET_CHANGED", "UpdateAllTargets")
+	self:RegisterEvent("MODIFIER_STATE_CHANGED", "OnModifier") -- [belief] the 3.3.5 name; if wrong the tooltip just stays static
 	self:RegisterEvent("UNIT_ENTERED_VEHICLE", "RefreshAllUnits")
 	self:RegisterEvent("UNIT_EXITED_VEHICLE", "RefreshAllUnits")
 	self:RegisterEvent("UNIT_PET", "RefreshAllUnits")

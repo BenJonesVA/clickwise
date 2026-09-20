@@ -55,7 +55,10 @@ function Config.NewCheck(page, x, y, label, path)
 	local name = Config.UniqueName("ClickwiseCfgCheck")
 	local cb = CreateFrame("CheckButton", name, page, "InterfaceOptionsCheckButtonTemplate")
 	cb:SetPoint("TOPLEFT", page, "TOPLEFT", x, y)
-	_G[name .. "Text"]:SetText(label)
+	local text = _G[name .. "Text"]
+	text:SetText(label)
+	-- the template's click area reaches 100 units past the box; cover only the box and its own label
+	cb:SetHitRectInsets(0, -((text:GetStringWidth() or 30) + 4), 0, 0)
 	cb:SetScript("OnClick", function(self)
 		Config.Set(path, self:GetChecked() and true or false)
 	end)
@@ -157,6 +160,12 @@ local COMBAT_COLOR_MODES = {
 	{value = "OFF", label = L["Off"]},
 }
 
+local TOOLTIP_MODES = {
+	{value = "DETAILED", label = L["Detailed"]},
+	{value = "BASIC", label = L["Standard"]},
+	{value = "OFF", label = L["Off"]},
+}
+
 local function BuildGeneral(page)
 	Config.NewCheck(page, 4, -8, L["Lock frames"], {"locked"})
 	Config.NewCheck(page, 4, -36, L["Show pets"], {"frame", "showPets"})
@@ -166,6 +175,14 @@ local function BuildGeneral(page)
 
 	Config.NewSlider(page, 340, -30, L["Out-of-range alpha"], {"range", "alpha"}, 0.1, 0.9, 0.05, "%.2f")
 	Config.NewSlider(page, 340, -90, L["Heal look-ahead (seconds)"], {"healPred", "timeFrame"}, 1, 10, 1, "%d")
+
+	-- hover tooltip (UnitFrame.lua): Detailed adds health / role / buffs / what each click does
+	Config.NewLabel(page, 340, -152, L["Unit tooltip"])
+	Config.NewDropdown(page, 430, -148, 110, TOOLTIP_MODES,
+		function() return Config.Get({"tooltip", "mode"}) end,
+		function(value) Config.Set({"tooltip", "mode"}, value) end)
+	Config.NewCheck(page, 336, -184, L["Show click bindings"], {"tooltip", "bindings"})
+	Config.NewCheck(page, 480, -184, L["Show buff status"], {"tooltip", "buffs"})
 
 	Config.NewButton(page, 8, -170, 150, L["Reset position"], function()
 		CW.Frames:ResetPosition()

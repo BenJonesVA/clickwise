@@ -237,6 +237,58 @@ local function CastName(b, btn)
 	end
 end
 
+-- "alt-ctrl-shift-" -> "Alt+Ctrl+Shift" (empty for no modifier)
+function ClickCast.ModifierText(modifier)
+	local parts = {}
+	if modifier:find("alt-", 1, true) then parts[#parts + 1] = L["Alt"] end
+	if modifier:find("ctrl-", 1, true) then parts[#parts + 1] = L["Ctrl"] end
+	if modifier:find("shift-", 1, true) then parts[#parts + 1] = L["Shift"] end
+	return table.concat(parts, "+")
+end
+
+local BUTTON_ORDER = {"1", "2", "3", "4", "5"}
+local BUTTON_TIP = {["1"] = L["Left"], ["2"] = L["Right"], ["3"] = L["Middle"], ["4"] = L["Button 4"], ["5"] = L["Button 5"]}
+local DEFAULT_CLICK = {["1"] = L["Target"], ["2"] = L["Menu"]} -- the "*type1" / "*type2" wildcard defaults of templates.xml
+local KIND_TEXT = {target = L["Target"], focus = L["Focus"], assist = L["Assist"], macro = L["Macro"]}
+
+-- Lines for the hover tooltip: what each click does with this modifier prefix ("" or "alt-ctrl-shift-") held.
+-- Each line is {left = button, right = action, r, g, b}. Second result: whether bindings on other modifier
+-- combinations exist (the tooltip hints at them).
+function ClickCast:TooltipLines(btn, modifier)
+	modifier = modifier or ""
+	local bound, others = {}, false
+	for _, b in ipairs(self:GetBindings()) do
+		if (b.modifier or "") == modifier then
+			local list = bound[b.button]
+			if not list then
+				list = {}
+				bound[b.button] = list
+			end
+			list[#list + 1] = b
+		else
+			others = true
+		end
+	end
+	local lines = {}
+	for _, button in ipairs(BUTTON_ORDER) do
+		local list = bound[button]
+		if list then
+			for _, b in ipairs(list) do
+				local what = CastName(b, btn)
+				if not what then
+					what = (b.type == "assigned" and L["Assigned buff"]) or KIND_TEXT[b.type] or b.group or b.spell or "?"
+				end
+				local when = WHEN_TEXT[WhenOf(b)]
+				if when then what = what .. " (" .. when .. ")" end
+				lines[#lines + 1] = {left = BUTTON_TIP[button], right = what, r = 1, g = 1, b = 1}
+			end
+		elseif DEFAULT_CLICK[button] then
+			lines[#lines + 1] = {left = BUTTON_TIP[button], right = DEFAULT_CLICK[button], r = 0.6, g = 0.6, b = 0.6}
+		end
+	end
+	return lines, others
+end
+
 -- Does this button's unit count as "in combat" right now? (a boolean, never nil)
 local function UnitFights(btn)
 	return (btn.unit and UnitAffectingCombat(btn.unit)) and true or false

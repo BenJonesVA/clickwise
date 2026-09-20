@@ -308,6 +308,60 @@ function Buffs:CheckData()
 	return lines
 end
 
+-- "5m" / "42s" for the hover tooltip
+local function FormatRemaining(seconds)
+	if seconds >= 60 then return math.floor(seconds / 60 + 0.5) .. "m" end
+	return math.floor(seconds) .. "s"
+end
+
+-- Lines for the hover tooltip: one per tracked group with its state, who supplied it and the time left on
+-- the player's own buff. Each line is {left, right, r, g, b}. Empty when nothing is tracked for this unit.
+function Buffs:TooltipLines(btn)
+	local out = {}
+	local unit = btn.unit
+	if not (enabled and unit and (#tracked > 0 or hasRules) and UnitIsPlayer(unit)) then return out end
+	-- a fresh read: the hover can come before the coalesced aura update. UpdateButton (not Scan alone) so the icons
+	-- and the click macro follow the same state the tooltip is about to show
+	self:UpdateButton(btn, true)
+	-- the first caster of an aura in each group that is not the player (a group the player covers is "yours")
+	local by = {}
+	for i = 1, 40 do
+		local name, _, _, _, _, _, _, caster = UnitAura(unit, i, "HELPFUL")
+		if not name then break end
+		local key = groupOf[name]
+		if key and by[key] == nil and not (type(caster) == "string" and UnitIsUnit(caster, "player")) then
+			by[key] = (type(caster) == "string" and UnitName(caster)) or L["Someone else"]
+		end
+	end
+	local now = GetTime()
+	for _, group in ipairs(CW.BuffGroups) do
+		local entry = info[group.key]
+		if entry and scanKeys[group.key] then
+			local have = btn.cwBuffState[group.key]
+			local line = {left = entry.label}
+			if have == MINE then
+				local expires = btn.cwExpire[group.key] -- false = permanent
+				line.right = L["Yours"]
+				if type(expires) == "number" and expires > now then
+					line.right = line.right .. " (" .. FormatRemaining(expires - now) .. ")"
+				end
+				line.r, line.g, line.b = 0.3, 1, 0.3
+			elseif have == OTHER then
+				line.right = by[group.key] or L["Someone else"]
+				line.r, line.g, line.b = 1, 0.85, 0.3
+			else
+				line.right = L["Missing"]
+				line.r, line.g, line.b = 1, 0.3, 0.3
+			end
+			out[#out + 1] = line
+		end
+	end
+	if btn.cwRule and btn.cwAssignedSpell then
+		out[#out + 1] = {left = L["Assigned buff"], right = btn.cwAssignedSpell, r = 1, g = 1, b = 1}
+	end
+	return out
+end
+
 -- Lines for `/cw buffs [unit]`: every helpful aura with its caster and buff group.
 function Buffs:DumpUnit(unit)
 	if not UnitExists(unit) then
