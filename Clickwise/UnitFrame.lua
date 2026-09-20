@@ -44,6 +44,19 @@ local ROLE_COORDS = {
 	HEALER = {20 / 64, 39 / 64, 1 / 64, 20 / 64},
 }
 
+-- The path of the font a name uses: a LibSharedMedia font by name, else the game's own (also when that font is
+-- not there any more, e.g. the addon that registered it is off).
+function UnitFrame.FontPath(name)
+	return (name and name ~= "" and LSM and LSM:Fetch("font", name, true)) or STANDARD_TEXT_FONT
+end
+
+-- SetFont answers nil for a file it cannot load, and a text that never got a font errors on SetText: fall back.
+local function SetTextFont(fontString, path, size)
+	if not fontString:SetFont(path, size, "OUTLINE") then
+		fontString:SetFont(STANDARD_TEXT_FONT, size, "OUTLINE")
+	end
+end
+
 local function GetBarTexture()
 	local name = CW.db.profile.frame.texture
 	return (LSM and LSM:Fetch("statusbar", name, true)) or FALLBACK_BAR_TEXTURE
@@ -284,9 +297,10 @@ function UnitFrame:LayoutButton(btn)
 	local c = db.healPred.color
 	btn.heal:SetStatusBarColor(c.r, c.g, c.b, c.a)
 
-	btn.nameText:SetFont(STANDARD_TEXT_FONT, f.fontSize, "OUTLINE")
+	local nameSize = f.nameSize or f.fontSize
+	SetTextFont(btn.nameText, UnitFrame.FontPath(f.nameFont), nameSize)
 	btn.statusText:SetFont(STANDARD_TEXT_FONT, f.fontSize - 1, "OUTLINE")
-	btn.cwMaxNameChars = floor((f.width - 4) / (f.fontSize * 0.55))
+	btn.cwMaxNameChars = floor((f.width - 4) / (nameSize * 0.55))
 	CW.Buffs:LayoutButton(btn)
 	if CW.Debuffs then CW.Debuffs:LayoutButton(btn) end
 end

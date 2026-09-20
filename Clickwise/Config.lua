@@ -231,6 +231,25 @@ local HEALTH_TEXT = {
 	{value = "PERCENT", label = L["Percent"]},
 }
 
+-- The fonts LibSharedMedia knows ("" = the game's own). With the SharedMedia addon there can be a hundred, and a
+-- dropdown does not scroll on 3.3.5 (it would run off the screen), so the font is stepped through with two arrows.
+local function FontList()
+	local list = {""}
+	local LSM = LibStub("LibSharedMedia-3.0", true)
+	for _, name in ipairs((LSM and LSM:List("font")) or {}) do list[#list + 1] = name end
+	return list
+end
+
+local function StepFont(delta)
+	local list = FontList()
+	local current = Config.Get({"frame", "nameFont"}) or ""
+	local index = 1
+	for i, name in ipairs(list) do
+		if name == current then index = i end
+	end
+	Config.Set({"frame", "nameFont"}, list[(index - 1 + delta) % #list + 1])
+end
+
 local function BuildLayout(page)
 	Config.NewCheck(page, 4, -8, L["Horizontal layout"], {"horizontal"})
 	Config.NewCheck(page, 4, -36, L["Class colored bars"], {"frame", "classColor"})
@@ -241,17 +260,39 @@ local function BuildLayout(page)
 		function() return Config.Get({"frame", "healthText"}) end,
 		function(value) Config.Set({"frame", "healthText"}, value) end)
 
+	-- the font of the names (UnitFrame.lua), shown in its own face; the size is the slider on the right
+	Config.NewLabel(page, 8, -136, L["Name font"])
+	local fontHolder
+	local fontPrev = Config.NewButton(page, 86, -132, 22, "<", function() StepFont(-1); fontHolder:Refresh() end)
+	fontHolder = CreateFrame("Frame", nil, page)
+	fontHolder:SetSize(150, 22)
+	fontHolder:SetPoint("TOPLEFT", page, "TOPLEFT", 112, -132)
+	local fontName = fontHolder:CreateFontString(nil, "ARTWORK", "GameFontHighlight")
+	fontName:SetAllPoints(fontHolder)
+	fontName:SetJustifyH("CENTER")
+	local fontNext = Config.NewButton(page, 266, -132, 22, ">", function() StepFont(1); fontHolder:Refresh() end)
+	function fontHolder:Refresh()
+		local name = Config.Get({"frame", "nameFont"}) or ""
+		local path = CW.UnitFrame.FontPath(name)
+		if not fontName:SetFont(path, 12) then fontName:SetFont(STANDARD_TEXT_FONT, 12) end
+		-- (a font is named when it exists: "Friz Quadrata TT" IS the game's font file, and still a choice of its own)
+		local LSM = LibStub("LibSharedMedia-3.0", true)
+		fontName:SetText(name ~= "" and LSM and LSM:Fetch("font", name, true) and name or L["Default font"])
+	end
+	page.controls[#page.controls + 1] = fontHolder
+	page.cwFontName, page.cwFontPrev, page.cwFontNext = fontName, fontPrev, fontNext
+
 	-- debuff highlight (Debuffs.lua)
-	Config.NewLabel(page, 8, -146, L["Debuffs"])
-	Config.NewCheck(page, 4, -168, L["Highlight debuffs"], {"debuffs", "enabled"})
-	Config.NewCheck(page, 4, -196, L["Only debuffs I can remove"], {"debuffs", "onlyMine"})
-	Config.NewCheck(page, 4, -224, L["Show the debuff icon"], {"debuffs", "icon"})
+	Config.NewLabel(page, 8, -176, L["Debuffs"])
+	Config.NewCheck(page, 4, -198, L["Highlight debuffs"], {"debuffs", "enabled"})
+	Config.NewCheck(page, 4, -226, L["Only debuffs I can remove"], {"debuffs", "onlyMine"})
+	Config.NewCheck(page, 4, -254, L["Show the debuff icon"], {"debuffs", "icon"})
 
 	-- aggro border and threat bar (Threat.lua)
-	Config.NewLabel(page, 8, -262, L["Threat"])
-	Config.NewCheck(page, 4, -284, L["Aggro border"], {"threat", "border"})
-	Config.NewCheck(page, 4, -312, L["Threat bar"], {"threat", "bar"})
-	local threatNote = Config.NewLabel(page, 8, -344,
+	Config.NewLabel(page, 8, -292, L["Threat"])
+	Config.NewCheck(page, 4, -314, L["Aggro border"], {"threat", "border"})
+	Config.NewCheck(page, 4, -342, L["Threat bar"], {"threat", "bar"})
+	local threatNote = Config.NewLabel(page, 8, -374,
 		L["Red ring: has the enemy. Yellow: about to take it. Tanks and pets get none. The warning percentage is on the General tab."],
 		"GameFontHighlightSmall")
 	threatNote:SetWidth(310)
@@ -261,6 +302,7 @@ local function BuildLayout(page)
 	Config.NewSlider(page, 340, -150, L["Frame height"], {"frame", "height"}, 20, 80, 1, "%d")
 	Config.NewSlider(page, 340, -210, L["Frame spacing"], {"frame", "spacing"}, 0, 10, 1, "%d")
 	Config.NewSlider(page, 340, -270, L["Group spacing"], {"frame", "groupSpacing"}, 0, 30, 1, "%d")
+	Config.NewSlider(page, 340, -330, L["Name size"], {"frame", "nameSize"}, 6, 20, 1, "%d")
 end
 
 --------------------------------------------------------------------------------

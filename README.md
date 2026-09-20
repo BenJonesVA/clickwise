@@ -8,7 +8,7 @@ Clickwise is **3.3.5 only** (`Interface: 30300`). On any other client it disable
 
 ## Features
 
-- **Compact unit frames** for party, raid and (optionally) pets, with class-colored health bars, a tank/healer role icon, and health text as deficit, percent or off.
+- **Compact unit frames** for party, raid and (optionally) pets, with class-colored health bars, a tank/healer role icon, and health text as deficit, percent or off. The font and size of the names are set on the Layout tab (any font LibSharedMedia knows, so the SharedMedia addon's fonts show up too).
 - **Click-casting** on any mouse button (1-5) with any Alt/Ctrl/Shift combination. Bindings are secure, so they keep working in combat.
   - Actions: cast a spell (optionally a specific rank), run a macro, target, assist, set focus, cast a buff group, or cast an assigned buff.
   - Every class ships with a healing/utility template. A template spell is only applied if your character actually knows it.

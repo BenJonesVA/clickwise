@@ -30,7 +30,9 @@ local defaults = {
 			spacing = 2,
 			groupSpacing = 6,
 			texture = "Blizzard",
-			fontSize = 10,
+			fontSize = 10, -- the health text (one smaller)
+			nameFont = "", -- a LibSharedMedia font name; "" = the game's own font
+			nameSize = 10,
 			classColor = true,
 			showPets = true,
 			showRoleIcon = true,
