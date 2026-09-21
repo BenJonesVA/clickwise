@@ -85,6 +85,8 @@ local function ActionText(b)
 	elseif b.type == "taunt" then
 		local spell = CW.ClickCast:TauntSpell()
 		return L["Taunt"] .. (spell and (": " .. spell) or "")
+	elseif b.type == "smart" then
+		return L["Smart"] .. ": " .. tostring(b.set)
 	end
 	return KIND_LABEL[b.type] or tostring(b.type)
 end
@@ -110,9 +112,14 @@ local function ResolveSpellName(text)
 	end
 	return text
 end
+Config.ResolveSpellName = ResolveSpellName -- (the Smart tab types spell names too)
 
 local function Build(page)
 	local ClickCast = CW.ClickCast
+	if CW.Smart and not KIND_LABEL.smart then -- (Smart.lua is nil when the client's file list is stale)
+		tinsert(KIND_ITEMS, 7, {value = "smart", label = L["Smart set"]}) -- before Macro
+		KIND_LABEL.smart = L["Smart set"]
+	end
 	local S = {alt = false, ctrl = false, shift = false, button = "1", kind = "spell", selectedKey = nil,
 		group = CW.BuffGroups[1].key, when = "ANY", whenChosen = false}
 	local data = {} -- sorted bindings currently shown in the list
@@ -442,6 +449,27 @@ local function Build(page)
 		"GameFontHighlightSmall")
 	assignedSection[#assignedSection]:SetWidth(290)
 
+	-- rule set section (Smart.lua; the sets are built in the Smart tab) ------------------------
+	local smartSection = {}
+	local smartItems = {}
+	local function FillSmartItems()
+		for i = #smartItems, 1, -1 do smartItems[i] = nil end
+		local names = CW.Smart and CW.Smart:SetNames() or {}
+		for _, name in ipairs(names) do smartItems[#smartItems + 1] = {value = name, label = name} end
+		if #names == 0 then smartItems[1] = {value = "", label = L["(no sets yet)"]} end
+		if not (S.smartSet and CW.Smart and CW.Smart:GetSet(S.smartSet)) then S.smartSet = names[1] end
+	end
+	smartSection[#smartSection + 1] = Config.NewLabel(page, FORM_X, -112, L["Rule set"])
+	local smartDrop = Config.NewDropdown(page, FORM_X, -128, 200, smartItems,
+		function() return S.smartSet or "" end,
+		function(v) S.smartSet = (v ~= "") and v or nil; UpdateStatus() end)
+	smartSection[#smartSection + 1] = smartDrop
+	smartSection[#smartSection + 1] = Config.NewLabel(page, FORM_X, -170,
+		L["Runs the rules of a set you build in the Smart tab: the first rule that holds decides what this click casts. If none holds, the click does nothing unless the set has an 'otherwise'."],
+		"GameFontHighlightSmall")
+	smartSection[#smartSection]:SetWidth(290)
+	page.cwSmartDrop = smartDrop
+
 	local function ShowSection(section, show)
 		for _, widget in ipairs(section) do
 			if show then widget:Show() else widget:Hide() end
@@ -456,6 +484,12 @@ local function Build(page)
 		ShowSection(cureSection, S.kind == "cure")
 		ShowSection(rezSection, S.kind == "rez")
 		ShowSection(tauntSection, S.kind == "taunt")
+		ShowSection(smartSection, S.kind == "smart")
+		if S.kind == "smart" then
+			FillSmartItems()
+			smartDrop:Invalidate()
+			smartDrop:Refresh()
+		end
 		-- an assigned buff is meant for out of combat (heals are what you want during the fight)
 		if not S.whenChosen then
 			S.when = (S.kind == "assigned") and "OOC" or "ANY"
@@ -559,6 +593,10 @@ local function Build(page)
 			else
 				lines[#lines + 1] = "|cffffcc00" .. L["You know no taunt spell - this does nothing until you do."] .. "|r"
 			end
+		elseif S.kind == "smart" then
+			if not (S.smartSet and CW.Smart and CW.Smart:GetSet(S.smartSet)) then
+				lines[#lines + 1] = "|cffff7070" .. L["Make a rule set in the Smart tab first."] .. "|r"
+			end
 		elseif S.kind == "macro" and Trim(macroBox:GetText()) == "" then
 			lines[#lines + 1] = "|cffff7070" .. L["Enter the macro text."] .. "|r"
 		end
@@ -574,6 +612,7 @@ local function Build(page)
 	local function ClearForm()
 		S.alt, S.ctrl, S.shift, S.button, S.kind, S.selectedKey = false, false, false, "1", "spell", nil
 		S.group = CW.BuffGroups[1].key
+		S.smartSet = nil
 		S.when, S.whenChosen = "ANY", false
 		spellBox:SetText("")
 		rankBox:SetText("")
@@ -590,6 +629,7 @@ local function Build(page)
 		S.button = b.button
 		S.kind = b.type
 		S.group = b.group or CW.BuffGroups[1].key
+		S.smartSet = b.set
 		S.when, S.whenChosen = (b.type == "cure" or b.type == "rez") and "ANY" or ClickCast.WhenOf(b), true
 		S.selectedKey = BindingKey(b)
 		spellBox:SetText(b.spell or "")
@@ -614,6 +654,9 @@ local function Build(page)
 			local text = Trim(macroBox:GetText())
 			if text == "" then UpdateStatus() return end
 			entry.macro = text
+		elseif S.kind == "smart" then
+			if not (S.smartSet and CW.Smart and CW.Smart:GetSet(S.smartSet)) then UpdateStatus() return end
+			entry.set = S.smartSet
 		end
 		ClickCast:SetBindingEntry(entry)
 		S.selectedKey = BindingKey(entry)

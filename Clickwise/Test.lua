@@ -343,6 +343,7 @@ function Test:AuraChanged(u)
 	CW.Buffs:OnUnitAura(nil, u.token)
 	if CW.Debuffs then CW.Debuffs:OnUnitAura(nil, u.token) end
 	if CW.Defensives then CW.Defensives:OnUnitAura(nil, u.token) end
+	if CW.Smart then CW.Smart:OnUnitAura(nil, u.token) end
 end
 
 function Test:Tick()
@@ -420,6 +421,21 @@ function Test:Cast(u, spell)
 	if changed then self:AuraChanged(u) end
 end
 
+-- The client cannot tell whether an invented unit is dead, so a clause that tests it ([target=cwtest3,dead], from a Smart
+-- mode rule) is answered here: true drops the test, false makes the bracket never hold.
+local function AnswerDead(clauses, u)
+	return (clauses:gsub("%[([^%]]-)%]", function(body)
+		local ok, kept = true, {}
+		for cond in body:gmatch("[^,]+") do
+			if cond == "dead" then ok = ok and u.dead
+			elseif cond == "nodead" then ok = ok and not u.dead
+			else kept[#kept + 1] = cond end
+		end
+		if not ok then kept[#kept + 1] = "combat"; kept[#kept + 1] = "nocombat" end -- both: never true
+		return "[" .. table.concat(kept, ",") .. "]"
+	end))
+end
+
 -- What the click does, read from the frame's own attributes (the ones a secure click would run).
 function Test:Click(btn, mouse)
 	local u = btn.cwFakeUnit and CW.fake[btn.cwFakeUnit]
@@ -436,7 +452,7 @@ function Test:Click(btn, mouse)
 			local clauses = line:match("^/cast%s+(.+)$")
 			if clauses then
 				-- an invented unit has no target for [harm,nodead] to test: those two are left out
-				clauses = clauses:gsub(",harm,nodead%]", "]")
+				clauses = AnswerDead(clauses:gsub(",harm,nodead%]", "]"), u)
 				local ok, action = pcall(SecureCmdOptionParse, clauses) -- picks the clause whose conditions hold now
 				if ok and action and action ~= "" then
 					spell = action

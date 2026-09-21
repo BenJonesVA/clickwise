@@ -67,6 +67,8 @@ local defaults = {
 		defensives = {
 			enabled = true,
 		},
+		-- Smart mode (Smart.lua): named rule sets per class, profile.smartSets[CLASS][name] = {rules = {...}, otherwise = action}
+		smartSets = {},
 		-- hover tooltip on the unit frames (UnitFrame.lua)
 		tooltip = {
 			mode = "DETAILED", -- DETAILED | BASIC (Blizzard's unit tooltip only) | OFF
@@ -569,6 +571,16 @@ function CW:SlashCommand(input)
 			-- Defensives.lua is listed in the .toc but was not loaded: the client only reads the file list at launch
 			self:Print("Defensives.lua was not loaded. Fully restart the game client (a /reload is not enough after files are added to the .toc).")
 		end
+	elseif cmd == "smart" then
+		-- debugging aid: what each rule set compiles to for a unit's frame, rule by rule
+		if CW.Smart then
+			for _, line in ipairs(CW.Smart:DumpUnit(rest ~= "" and rest or "player")) do
+				self:Print(line)
+			end
+		else
+			-- Smart.lua is listed in the .toc but was not loaded: the client only reads the file list at launch
+			self:Print("Smart.lua was not loaded. Fully restart the game client (a /reload is not enough after files are added to the .toc).")
+		end
 	elseif cmd == "dispels" then
 		-- debugging aid: which removal spells the client resolved and knows, and what that covers
 		for _, line in ipairs(CW.Debuffs:Describe()) do
@@ -614,6 +626,11 @@ function CW:SlashCommand(input)
 				self:Print(line)
 			end
 		end
+		if CW.Smart then
+			for _, line in ipairs(CW.Smart:CheckConditionals()) do
+				self:Print(line)
+			end
+		end
 	elseif cmd == "options" then
 		local panel = self.optionsPanel
 		if panel then
@@ -631,6 +648,6 @@ function CW:SlashCommand(input)
 			self:Print("Settings window files were not loaded. Fully restart the game client (a /reload is not enough after files are added to the .toc).")
 		end
 	else
-		self:Print("/cw [config] | lock | unlock | reset | binds | bind <key> <spell> | unbind <key> | resetbinds | buffs [unit] | buffcheck | debuffs [unit] | defensives [unit] | dispels | threat | profile [name] | test [5|10|25|40|off|combat]")
+		self:Print("/cw [config] | lock | unlock | reset | binds | bind <key> <spell> | unbind <key> | resetbinds | buffs [unit] | buffcheck | debuffs [unit] | defensives [unit] | smart [unit] | dispels | threat | profile [name] | test [5|10|25|40|off|combat]")
 	end
 end

@@ -1,5 +1,5 @@
 -- Clickwise settings window: a standalone, movable, tabbed frame (General | Layout |
--- Bindings | Buffs | Assignments), opened with /cw or from the Interface Options entry. It replaces the
+-- Bindings | Buffs | Assignments | Profiles | Role look | Smart), opened with /cw or from the Interface Options entry. It replaces the
 -- old single-page Interface Options layout, which overflowed that panel's fixed width.
 --
 -- Built lazily on first open (the DB does not exist when this file loads). Every template
@@ -17,7 +17,7 @@ CW.Config = Config
 Config.builders = {} -- page key -> function(page); filled by ConfigBindings.lua etc.
 
 local WINDOW_W, WINDOW_H = 680, 520
-local TAB_W = 88 -- seven tabs: 24 + 7 * 92 still fits the window
+local TAB_W, TAB_GAP = 76, 3 -- eight tabs: 24 + 8 * 76 + 7 * 3 = 653 still fits the window
 
 local nameCounter = 0
 function Config.UniqueName(prefix)
@@ -118,6 +118,8 @@ function Config.NewDropdown(page, x, y, width, items, get, set)
 	local dd = CreateFrame("Frame", Config.UniqueName("ClickwiseCfgDrop"), page, "UIDropDownMenuTemplate")
 	dd:SetPoint("TOPLEFT", page, "TOPLEFT", x - 16, y + 2) -- the template has a 16 unit left inset
 	local initialised = false
+	-- the items table may change (a list of sets, the choices of a condition): after editing it, Invalidate() and Refresh()
+	function dd:Invalidate() initialised = false end
 	function dd:Refresh()
 		if not initialised then
 			initialised = true
@@ -341,6 +343,7 @@ local TABS = {
 	{key = "assign", label = L["Assignments"]}, -- builder registered by ConfigAssign.lua
 	{key = "profiles", label = L["Profiles"]}, -- builder registered by ConfigProfiles.lua
 	{key = "rolelook", label = L["Role look"]}, -- builder registered by ConfigRoleLook.lua
+	{key = "smart", label = L["Smart"]}, -- builder registered by ConfigSmart.lua
 }
 
 function Config:SelectTab(index)
@@ -410,7 +413,7 @@ function Config:Build()
 		b:SetPoint("TOPLEFT", f, "TOPLEFT", x, -44)
 		b:SetText(tab.label)
 		b:SetScript("OnClick", function() Config:SelectTab(i) end)
-		x = x + TAB_W + 4
+		x = x + TAB_W + TAB_GAP
 		tab.button = b
 
 		local page = CreateFrame("Frame", nil, f)

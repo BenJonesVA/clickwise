@@ -356,6 +356,7 @@ function UnitFrame:UpdateButton(btn)
 	if CW.Debuffs then CW.Debuffs:UpdateButton(btn) end
 	if CW.Threat then CW.Threat:UpdateButton(btn) end -- after the role: only a known healer / damage dealer gets the ring
 	if CW.Defensives then CW.Defensives:UpdateButton(btn) end
+	if CW.Smart then CW.Smart:UpdateButton(btn) end -- the rule sets' frozen answers (role, class, is it me)
 end
 
 function UnitFrame:UpdateName(btn)

@@ -24,6 +24,7 @@ CombatColor.lua
 Threat.lua
 UnitFrame.lua
 ClickCast.lua
+Smart.lua
 Frames.lua
 Test.lua
 Config.lua
@@ -32,4 +33,5 @@ ConfigBuffs.lua
 ConfigAssign.lua
 ConfigProfiles.lua
 ConfigRoleLook.lua
+ConfigSmart.lua
 Options.lua

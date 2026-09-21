@@ -22,6 +22,12 @@
 -- have, so the macro aims at the member's target: "/cast [target=<unit>target,harm,nodead] <taunt>". Unlike the
 -- smart clicks it works in combat (that is when a tank taunts) and it takes the click over like an ordinary
 -- binding. The macro names the unit token, so it is rewritten (out of combat) when the button's unit changes.
+-- type "smart" runs a named rule set (Smart.lua): an ordered list of IF conditions THEN action rules, first match wins,
+-- with an optional "otherwise". It compiles per unit frame into clauses of the click's one `/cast` line, so it needs the macro
+-- path and is rewritten (out of combat) whenever what it froze changes: the frame's signature carries the compiled result.
+-- It is an ordinary binding as far as collisions go (`when` "ANY": it takes the click, replacing whatever else is on it,
+-- except a cure / rez click, which stays in front of it); the set's own "otherwise" is its fallback. Its clauses go after
+-- cure / rez and before the click's other clauses, in the player's order, and stop at the macro length limit (Smart.MACRO_LIMIT).
 -- Bindings become exact-match secure attributes ("shift-type1", "shift-spell1", ...) on every
 -- unit button; exact matches beat the "*type1"/"*type2" wildcard defaults from templates.xml,
 -- so left = target and right = menu keep working for every unbound modifier combination.
@@ -232,7 +238,7 @@ end
 function ClickCast:DescribeBindings()
 	local lines = {}
 	for _, b in ipairs(self:GetBindings()) do
-		local what = b.spell or b.macro or (b.group and ("buff group " .. b.group)) or (b.type == "cure" and "cure debuff") or (b.type == "rez" and "resurrect") or b.type
+		local what = b.spell or b.macro or (b.group and ("buff group " .. b.group)) or (b.type == "cure" and "cure debuff") or (b.type == "rez" and "resurrect") or (b.type == "smart" and ("smart set " .. tostring(b.set))) or b.type
 		if b.rank then what = what .. " (" .. b.rank .. ")" end
 		local when = WHEN_TEXT[WhenOf(b)]
 		if when then what = what .. " [" .. when .. "]" end
@@ -283,7 +289,7 @@ end
 local BUTTON_ORDER = {"1", "2", "3", "4", "5"}
 local BUTTON_TIP = {["1"] = L["Left"], ["2"] = L["Right"], ["3"] = L["Middle"], ["4"] = L["Button 4"], ["5"] = L["Button 5"]}
 local DEFAULT_CLICK = {["1"] = L["Target"], ["2"] = L["Menu"]} -- the "*type1" / "*type2" wildcard defaults of templates.xml
-local KIND_TEXT = {target = L["Target"], focus = L["Focus"], assist = L["Assist"], macro = L["Macro"], cure = L["Cure debuff"], rez = L["Resurrect"], taunt = L["Taunt"]}
+local KIND_TEXT = {target = L["Target"], focus = L["Focus"], assist = L["Assist"], macro = L["Macro"], cure = L["Cure debuff"], rez = L["Resurrect"], taunt = L["Taunt"], smart = L["Smart"]}
 
 -- Lines for the hover tooltip: what each click does with this modifier prefix ("" or "alt-ctrl-shift-") held.
 -- Each line is {left = button, right = action, r, g, b}. Second result: whether bindings on other modifier
@@ -309,7 +315,9 @@ function ClickCast:TooltipLines(btn, modifier)
 		if list then
 			for _, b in ipairs(list) do
 				local what = CastName(b, btn)
-				if SMART[b.type] or b.type == "taunt" then
+				if b.type == "smart" then
+					what = KIND_TEXT.smart .. ": " .. tostring(b.set)
+				elseif SMART[b.type] or b.type == "taunt" then
 					what = KIND_TEXT[b.type] .. (what and (": " .. what) or "")
 				elseif not what then
 					what = (b.type == "assigned" and L["Assigned buff"]) or KIND_TEXT[b.type] or b.group or b.spell or "?"
@@ -330,10 +338,10 @@ local function UnitFights(btn)
 	return (btn.unit and UnitAffectingCombat(btn.unit)) and true or false
 end
 
--- Whether any binding of the list needs the macro path: a casting binding that is gated, an assigned one or a smart click.
+-- Whether any binding of the list needs the macro path: a casting binding that is gated, an assigned one, a smart click or a rule set.
 local function NeedsMacro(items)
 	for _, b in ipairs(items) do
-		if b.type == "assigned" or b.type == "taunt" or SMART[b.type] or (CASTS[b.type] and WhenOf(b) ~= "ANY") then return true end
+		if b.type == "assigned" or b.type == "taunt" or b.type == "smart" or SMART[b.type] or (CASTS[b.type] and WhenOf(b) ~= "ANY") then return true end
 	end
 	return false
 end
@@ -343,6 +351,7 @@ local function TauntTarget(unit)
 	if unit == "player" then return "target" end
 	return unit .. "target"
 end
+ClickCast.TauntTarget = TauntTarget -- (Smart.lua aims a rule set's taunt the same way)
 
 -- The macro for one click that carries gated / assigned bindings (see the header comment), or nil when
 -- nothing applies to this button right now.
@@ -350,9 +359,12 @@ local function BuildClickMacro(btn, items, button)
 	local fights = btn.cwUnitCombat
 	local gated, open = {}, {}
 	local smart = {}
+	local sets = {} -- the rule sets on this click (Smart.lua)
 	for _, b in ipairs(items) do
 		local spell, unit = CastName(b, btn), b.unit or btn.unit
-		if SMART[b.type] then
+		if b.type == "smart" then
+			sets[#sets + 1] = b.set
+		elseif SMART[b.type] then
 			-- first in the macro, and only while the player is out of combat (see the header comment)
 			if spell and unit then smart[#smart + 1] = ("[nocombat,target=%s] %s"):format(unit, spell) end
 		elseif spell and unit then
@@ -373,6 +385,21 @@ local function BuildClickMacro(btn, items, button)
 	end
 	-- an unconditional clause matches whatever follows it, so it goes last
 	for _, clause in ipairs(open) do gated[#gated + 1] = clause end
+	-- the rule sets: in the player's order, right after cure / rez, within what is left of the macro line
+	if CW.Smart and #sets > 0 then
+		-- Smart:Compile counts each clause as its length + 2 (the "; " before it, also for the first), so what is left of the line
+		-- is the limit less the other clauses (length + 2 each) and less the 4 that "/cast " (6) overshoots that first count by
+		local budget = CW.Smart.MACRO_LIMIT - 4 - #table.concat(smart) - #table.concat(gated) - 2 * (#smart + #gated)
+		local ruleClauses = {}
+		for _, name in ipairs(sets) do
+			local clauses = CW.Smart:Compile(btn, name, budget)
+			for _, clause in ipairs(clauses) do
+				ruleClauses[#ruleClauses + 1] = clause
+				budget = budget - #clause - 2
+			end
+		end
+		for i = #ruleClauses, 1, -1 do table.insert(gated, 1, ruleClauses[i]) end
+	end
 	for i = #smart, 1, -1 do table.insert(gated, 1, smart[i]) end
 	if #gated == 0 then return nil end
 	local text = "/cast " .. table.concat(gated, "; ")
@@ -386,10 +413,10 @@ local function BuildClickMacro(btn, items, button)
 end
 
 -- The parts of a button's attributes that follow live state: the unit it shows, whether that unit is
--- fighting, the buff the assignment rules picked for it, the spell that removes its debuff and the rez.
+-- fighting, the buff the assignment rules picked for it, the spell that removes its debuff, the rez and what its rule sets compile to.
 local function Signature(btn)
 	return (btn.unit or "") .. "|" .. (btn.cwUnitCombat and "1" or "0") .. "|" .. (btn.cwAssignedSpell or "")
-		.. "|" .. (btn.cwCureSpell or "") .. "|" .. (btn.cwRezSpell or "")
+		.. "|" .. (btn.cwCureSpell or "") .. "|" .. (btn.cwRezSpell or "") .. "|" .. (btn.cwSmartSig or "")
 end
 
 -- A binding that does not depend on live state: plain secure attributes that follow the button's own unit.
@@ -467,10 +494,10 @@ function ClickCast:HasGatedBinding()
 	return false
 end
 
--- Does any binding's attribute depend on live state (unit, unit combat, assigned pick, cure / rez pick)?
+-- Does any binding's attribute depend on live state (unit, unit combat, assigned pick, cure / rez pick, a rule set)?
 function ClickCast:IsDynamic()
 	for _, b in ipairs(self:GetBindings()) do
-		if b.type == "assigned" or b.type == "taunt" or SMART[b.type] or (CASTS[b.type] and WhenOf(b) ~= "ANY") then return true end
+		if b.type == "assigned" or b.type == "taunt" or b.type == "smart" or SMART[b.type] or (CASTS[b.type] and WhenOf(b) ~= "ANY") then return true end
 	end
 	return false
 end
@@ -576,6 +603,7 @@ function ClickCast:RefreshDynamic()
 	local gated = self:HasGatedBinding()
 	for btn in pairs(CW.UnitFrame.frames) do
 		btn.cwUnitCombat = gated and UnitFights(btn) or false
+		if CW.Smart then CW.Smart:Refresh(btn) end -- likewise the rule sets' frozen answers
 		if Signature(btn) ~= btn.cwSigApplied then
 			self:ApplyToButton(btn)
 		end
@@ -606,12 +634,14 @@ function ClickCast:ApplyAll()
 	local gated = self:HasGatedBinding()
 	self:RebuildRez() -- the spellbook may have changed
 	self:RebuildTaunt()
+	if CW.Smart then CW.Smart:RefreshUsed() end -- which rule sets the bindings run (and whether they look at auras)
 	if CW.Debuffs and self:HasCureBinding() then
 		CW.Debuffs:RefreshAll() -- every button's cure pick must be current before its click is written
 	end
 	for btn in pairs(CW.UnitFrame.frames) do
 		btn.cwRezSpell = RezPick(btn) -- likewise the rez pick
 		btn.cwUnitCombat = gated and UnitFights(btn) or false -- read fresh: the poll may not have run yet
+		if CW.Smart then CW.Smart:Refresh(btn) end -- and the rule sets' frozen answers
 		self:ApplyToButton(btn)
 	end
 end
