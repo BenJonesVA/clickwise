@@ -143,6 +143,10 @@ function UnitFrame:TooltipLines(btn)
 		local lines = CW.Debuffs:TooltipLines(btn)
 		if #lines > 0 then section(L["Debuffs"], lines) end
 	end
+	if CW.Defensives then
+		local lines = CW.Defensives:TooltipLines(btn)
+		if #lines > 0 then section(L["Defensives up"], lines) end
+	end
 	if t.buffs then
 		local lines = CW.Buffs:TooltipLines(btn)
 		if #lines > 0 then section(L["Buffs"], lines) end
@@ -252,6 +256,7 @@ function UnitFrame:InitButton(btn, demo)
 	CW.Buffs:InitButton(btn)
 	if CW.Debuffs then CW.Debuffs:InitButton(btn) end -- nil if this file list is stale (a new .lua file needs a full client restart)
 	if CW.Threat then CW.Threat:InitButton(btn) end
+	if CW.Defensives then CW.Defensives:InitButton(btn) end
 
 	btn.menu = UnitFrame.ShowMenu
 	btn:SetScript("OnEnter", function(self) UnitFrame:ShowTooltip(self) end)
@@ -304,6 +309,7 @@ function UnitFrame:LayoutButton(btn)
 	btn.cwMaxNameChars = floor((width - 4) / (nameSize * 0.55))
 	CW.Buffs:LayoutButton(btn)
 	if CW.Debuffs then CW.Debuffs:LayoutButton(btn) end
+	if CW.Defensives then CW.Defensives:LayoutButton(btn) end
 end
 
 --------------------------------------------------------------------------------
@@ -349,6 +355,7 @@ function UnitFrame:UpdateButton(btn)
 	CW.Buffs:UpdateButton(btn)
 	if CW.Debuffs then CW.Debuffs:UpdateButton(btn) end
 	if CW.Threat then CW.Threat:UpdateButton(btn) end -- after the role: only a known healer / damage dealer gets the ring
+	if CW.Defensives then CW.Defensives:UpdateButton(btn) end
 end
 
 function UnitFrame:UpdateName(btn)
@@ -380,6 +387,7 @@ function UnitFrame:UpdateHealth(btn)
 		btn.cwOffline, btn.cwDead = offline, dead
 		CW.Buffs:Paint(btn) -- missing-buff icons grey out for dead / offline units
 		if CW.Debuffs then CW.Debuffs:UpdateButton(btn) end -- and the debuff border goes
+		if CW.Defensives then CW.Defensives:UpdateButton(btn) end -- and so do the defensive icons
 		CW.ClickCast:UpdateRez(btn) -- and the resurrect click follows the dead state
 	end
 

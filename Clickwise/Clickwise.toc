@@ -19,6 +19,7 @@ HealPred.lua
 BuffData.lua
 Buffs.lua
 Debuffs.lua
+Defensives.lua
 CombatColor.lua
 Threat.lua
 UnitFrame.lua

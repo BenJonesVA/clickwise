@@ -281,6 +281,10 @@ L["Aggro border"] = true
 L["Threat bar"] = true
 L["Red ring: has the enemy. Yellow: about to take it. Tanks and pets get none. The warning percentage is on the General tab."] = true
 
+-- Active defensives (Defensives.lua)
+L["Show defensive cooldowns that are up"] = true
+L["Defensives up"] = true
+
 -- Test mode (Test.lua)
 L["Test group: the frames are not built yet."] = true
 L["Test group: %d made-up members, shown below your frames. Click one to see what your click would cast. /cw test combat switches combat colors, /cw test off ends it."] = true

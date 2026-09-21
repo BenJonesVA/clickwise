@@ -347,32 +347,41 @@ function Buffs:ResolveNames()
 	end
 end
 
--- Lines for `/cw buffcheck` (only meaningful on an English client). Two different findings:
---   an ID that resolves to ANOTHER spell is wrong and dangerous: ResolveNames would rename the group to that spell;
---   an ID the client does not know at all (a spell this expansion does not have) is harmless: the group is simply
+-- Lines for `/cw buffcheck` (only meaningful on an English client). entries = {{label, id, expected}, ...}. Two
+-- different findings:
+--   an ID that resolves to ANOTHER spell is wrong and dangerous: ResolveNames would rename the entry to that spell;
+--   an ID the client does not know at all (a spell this expansion does not have) is harmless: the spell is simply
 --   never offered, so it is listed apart and does not count as wrong.
-function Buffs:CheckData()
+-- `what` / `file` word the summary ("buff" / "BuffData.lua"); Defensives.lua checks its own list the same way.
+function Buffs.CheckSpells(entries, what, file)
 	local lines, bad, absent = {}, 0, 0
-	for _, group in ipairs(CW.BuffGroups) do
-		for _, s in ipairs(group.spells) do
-			local name = GetSpellInfo(s.id)
-			local expected = s.english or s.name
-			if type(name) ~= "string" or name == "" then
-				absent = absent + 1
-				lines[#lines + 1] = ("%s: id %d (%s) is not on this client, so that spell is never offered"):format(group.key, s.id, expected)
-			elseif name ~= expected then
-				bad = bad + 1
-				lines[#lines + 1] = ("%s: id %d resolves to %s, expected %s"):format(group.key, s.id, name, expected)
-			end
+	for _, e in ipairs(entries) do
+		local name = GetSpellInfo(e.id)
+		if type(name) ~= "string" or name == "" then
+			absent = absent + 1
+			lines[#lines + 1] = ("%s: id %d (%s) is not on this client, so that spell is never offered"):format(e.label, e.id, e.expected)
+		elseif name ~= e.expected then
+			bad = bad + 1
+			lines[#lines + 1] = ("%s: id %d resolves to %s, expected %s"):format(e.label, e.id, name, e.expected)
 		end
 	end
 	if bad == 0 then
-		lines[#lines + 1] = "All buff spell IDs that exist on this client resolve to the expected names."
+		lines[#lines + 1] = ("All %s spell IDs that exist on this client resolve to the expected names."):format(what)
 			.. (absent > 0 and (" " .. absent .. " ID(s) are not on this client (harmless).") or "")
 	else
-		lines[#lines + 1] = bad .. " buff spell ID(s) resolve to a DIFFERENT spell: fix them in BuffData.lua."
+		lines[#lines + 1] = bad .. " " .. what .. " spell ID(s) resolve to a DIFFERENT spell: fix them in " .. file .. "."
 	end
 	return lines
+end
+
+function Buffs:CheckData()
+	local entries = {}
+	for _, group in ipairs(CW.BuffGroups) do
+		for _, s in ipairs(group.spells) do
+			entries[#entries + 1] = {label = group.key, id = s.id, expected = s.english or s.name}
+		end
+	end
+	return self.CheckSpells(entries, "buff", "BuffData.lua")
 end
 
 -- "5m" / "42s" for the hover tooltip

@@ -126,6 +126,32 @@ local function NewUnit(i)
 	return u
 end
 
+-- Defensives (Defensives.lua): every third frame has one of the big externals from another test unit, the tanks their own
+-- cooldown, so the icons, their borders and the countdown can be watched. `left` = seconds until it runs out.
+local EXTERNAL_IDS = {47788, 33206, 6940, 1022}
+local OWN_IDS = {871, 12975, 31850, 48792, 22812}
+
+local function AddDefensive(u, id, caster, duration, left)
+	if not CW.Defensives then return end -- nil if this file list is stale (a new .lua file needs a full client restart)
+	local name
+	for _, entry in ipairs(CW.Defensives.LIST) do
+		if entry.id == id then name = entry.name end -- (as resolved by the client, which is what an aura is called)
+	end
+	local _, _, icon = GetSpellInfo(id)
+	u.buffs[#u.buffs + 1] = {name = name or tostring(id), icon = icon or QUESTION_MARK, caster = caster,
+		duration = duration, expires = GetTime() + left}
+end
+
+local function AddExternal(u, count, left)
+	local other = u.index % count + 1
+	AddDefensive(u, EXTERNAL_IDS[u.index % #EXTERNAL_IDS + 1], "cwtest" .. other, 12, left)
+end
+
+local function SeedDefensives(u, count)
+	if u.index % 3 == 1 and count > 1 then AddExternal(u, count, 5 + (u.index % 4) * 3) end
+	if u.role == "TANK" then AddDefensive(u, OWN_IDS[u.index % #OWN_IDS + 1], u.token, 15, 12) end
+end
+
 -- Buffs: for every buff group a mix of missing, provided by someone else, the player's own and the player's own
 -- about to run out (the pulse). The player's own are only invented for spells the player knows, one per exclusive
 -- slot (a paladin cannot have two of his blessings on one target).
@@ -241,7 +267,10 @@ function Test:Start(count)
 		CW.fake[u.token] = u
 		CW.fakeGuid[u.guid] = u
 	end
-	for _, u in ipairs(self.units) do SeedBuffs(u, count) end
+	for _, u in ipairs(self.units) do
+		SeedBuffs(u, count)
+		SeedDefensives(u, count)
+	end
 	self.count, self.ticks = count, 0
 
 	self:Layout()
@@ -313,6 +342,7 @@ end
 function Test:AuraChanged(u)
 	CW.Buffs:OnUnitAura(nil, u.token)
 	if CW.Debuffs then CW.Debuffs:OnUnitAura(nil, u.token) end
+	if CW.Defensives then CW.Defensives:OnUnitAura(nil, u.token) end
 end
 
 function Test:Tick()
@@ -329,6 +359,14 @@ function Test:Tick()
 				u.threat, u.threatPct = random(0, 2), random(40, 100)
 			end
 			CW.UnitFrame:UpdateGUID(u.guid)
+		end
+	end
+	if self.ticks % 3 == 0 then
+		-- an external lands on someone (it runs out by itself: the countdown and the safety net clear it)
+		local u = self.units[random(1, self.count)]
+		if u.online and not u.dead and self.count > 1 then
+			AddExternal(u, self.count, 12)
+			self:AuraChanged(u)
 		end
 	end
 	if self.ticks % 4 == 0 then
