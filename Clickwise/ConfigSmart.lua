@@ -1,10 +1,13 @@
 -- Smart tab of the settings window: the rule-set builder (rules and their compiled form live in Smart.lua).
 --
 --   left  : the rule set (a dropdown, New / Rename / Delete with one name box) and its rules as an ordered list,
---           the "Otherwise" row last, with Up / Down / Delete for the selected rule
+--           the "Otherwise" row last, with Up / Down / Delete for the selected rule; under it the set's GROUPS
+--           (a dropdown to pick one to edit, New / Delete with a name box)
 --   right : the selected rule: how its conditions combine (all / any), up to four condition rows (NOT, a condition
---           from the catalog, its value), the action, Save / New rule, and a status area that reads the rule out in words,
---           warns, and shows the macro it compiles to for your own frame
+--           from the catalog, its value), the group it belongs to, the action (a spell or a saved macro is picked from a
+--           searchable list), Save / New rule, and a status area that reads the rule out in words, warns, and shows the
+--           macro it compiles to for your own frame. Picking a group on the left turns the right side into the group's
+--           editor: the same condition rows, no action.
 --
 -- Every edit goes through CW.Smart, which asks the click-cast engine to rewrite the clicks (out of combat).
 
@@ -35,8 +38,10 @@ local function Build(page)
 	local COND = Smart.COND
 	local ClickCast = CW.ClickCast
 
-	-- the form: what the editor is showing. sel: a rule's index, 0 = the "otherwise", nil = a new rule.
-	local S = {set = nil, sel = nil, mode = "all", conds = {}, kind = "spell", spell = "", group = CW.BuffGroups[1].key, notice = nil}
+	-- the form: what the editor is showing. sel: a rule's index, 0 = the "otherwise", nil = a new rule. grp: the name of the
+	-- group being edited (then sel means nothing). group: the BUFF group of a buff action; ruleGroup: the rule's Smart group.
+	local S = {set = nil, sel = nil, grp = nil, mode = "all", conds = {}, kind = "spell", spell = "", macro = "",
+		group = CW.BuffGroups[1].key, ruleGroup = nil, notice = nil}
 	for i = 1, Smart.MAX_CONDS do S.conds[i] = {key = "", arg = nil, neg = false} end
 
 	local UpdateList, UpdateStatus, SyncForm, SyncRow, SyncAction
@@ -54,25 +59,45 @@ local function Build(page)
 	FillSetItems()
 	local function Notice(text) S.notice = text end
 
+	local function ClearConds()
+		for i = 1, Smart.MAX_CONDS do S.conds[i] = {key = "", arg = nil, neg = false} end
+	end
+
+	local function LoadConds(source)
+		for i = 1, Smart.MAX_CONDS do
+			local c = source and source.conds[i]
+			S.conds[i] = c and {key = c.key, arg = c.arg, neg = c.neg and true or false} or {key = "", arg = nil, neg = false}
+		end
+	end
+
+	local function LoadAction(action, default)
+		S.kind, S.spell, S.macro = (action and action.type) or default, (action and action.spell) or "", (action and action.macro) or ""
+		S.group = (action and action.group) or CW.BuffGroups[1].key
+	end
+
 	local function LoadRule(index)
 		local set = Smart:GetSet(S.set)
 		local rule = set and set.rules[index]
-		for i = 1, Smart.MAX_CONDS do
-			local c = rule and rule.conds[i]
-			S.conds[i] = c and {key = c.key, arg = c.arg, neg = c.neg and true or false} or {key = "", arg = nil, neg = false}
-		end
+		LoadConds(rule)
 		S.mode = rule and rule.mode or "all"
-		S.sel = rule and index or nil
-		local action = rule and rule.action
-		S.kind, S.spell, S.group = (action and action.type) or "spell", (action and action.spell) or "", (action and action.group) or CW.BuffGroups[1].key
+		S.sel, S.grp = rule and index or nil, nil
+		S.ruleGroup = rule and rule.group or nil
+		LoadAction(rule and rule.action, "spell")
 	end
 
 	local function LoadOtherwise()
 		local set = Smart:GetSet(S.set)
-		local action = set and set.otherwise
-		for i = 1, Smart.MAX_CONDS do S.conds[i] = {key = "", arg = nil, neg = false} end
-		S.mode, S.sel = "all", 0
-		S.kind, S.spell, S.group = (action and action.type) or "none", (action and action.spell) or "", (action and action.group) or CW.BuffGroups[1].key
+		ClearConds()
+		S.mode, S.sel, S.grp, S.ruleGroup = "all", 0, nil, nil
+		LoadAction(set and set.otherwise, "none")
+	end
+
+	local function LoadGroup(name)
+		local group = Smart:GetGroup(S.set, name)
+		LoadConds(group)
+		S.mode = group and group.mode or "all"
+		S.grp, S.sel, S.ruleGroup = group and name or nil, nil, nil
+		LoadAction(nil, "spell")
 	end
 
 	local function SelectSet(name)
@@ -172,7 +197,7 @@ local function Build(page)
 			if rule then
 				row.index = i
 				row.text:SetText(CW.TruncateUTF8(i .. ". " .. Smart.RuleText(rule), 46))
-				if S.sel == i then row.sel:Show() else row.sel:Hide() end
+				if S.sel == i and not S.grp then row.sel:Show() else row.sel:Hide() end
 				row:Show()
 			else
 				row.index = nil
@@ -182,7 +207,7 @@ local function Build(page)
 		end
 		if set then
 			otherRow.text:SetText(CW.TruncateUTF8(L["Otherwise"] .. ": " .. Smart.ActionText(set.otherwise), 46))
-			if S.sel == 0 then otherRow.sel:Show() else otherRow.sel:Hide() end
+			if S.sel == 0 and not S.grp then otherRow.sel:Show() else otherRow.sel:Hide() end
 			otherRow:Show()
 		else
 			otherRow:Hide()
@@ -190,7 +215,7 @@ local function Build(page)
 	end
 
 	local function Move(delta)
-		if S.set and S.sel and S.sel > 0 then
+		if S.set and S.sel and S.sel > 0 and not S.grp then
 			S.sel = Smart:MoveRule(S.set, S.sel, delta)
 			S.notice = nil
 			SyncForm()
@@ -199,11 +224,61 @@ local function Build(page)
 	Config.NewButton(page, 0, -296, 60, L["Up"], function() Move(-1) end)
 	Config.NewButton(page, 64, -296, 60, L["Down"], function() Move(1) end)
 	Config.NewButton(page, 128, -296, 100, L["Delete rule"], function()
-		if S.set and S.sel and S.sel > 0 and Smart:DeleteRule(S.set, S.sel) then
+		if S.set and S.sel and S.sel > 0 and not S.grp and Smart:DeleteRule(S.set, S.sel) then
 			LoadRule(nil)
 			S.notice = nil
 			SyncForm()
 		end
+	end)
+
+	-- the set's groups: pick one to edit its conditions; a rule joins one under "In group" on the right
+	Config.NewLabel(page, 0, -326, L["Groups (a condition shared by rules)"], "GameFontHighlightSmall")
+	local groupEditItems, ruleGroupItems = {}, {}
+	local function FillGroupItems()
+		for i = #groupEditItems, 1, -1 do groupEditItems[i] = nil end
+		for i = #ruleGroupItems, 1, -1 do ruleGroupItems[i] = nil end
+		ruleGroupItems[1] = {value = "", label = L["(no group)"]}
+		for _, name in ipairs(Smart:GroupNames(S.set)) do
+			groupEditItems[#groupEditItems + 1] = {value = name, label = name}
+			ruleGroupItems[#ruleGroupItems + 1] = {value = name, label = name}
+		end
+		if #groupEditItems == 0 then groupEditItems[1] = {value = "", label = L["(no groups yet)"]} end
+	end
+	FillGroupItems()
+	local groupEditDrop = Config.NewDropdown(page, 0, -340, 130, groupEditItems,
+		function() return S.grp or "" end,
+		function(value)
+			if value ~= "" then LoadGroup(value) S.notice = nil SyncForm() end
+		end)
+	Config.NewButton(page, 158, -342, 104, L["Delete group"], function()
+		if not (S.set and S.grp) then return end
+		local ok, count = Smart:DeleteGroup(S.set, S.grp)
+		if ok then
+			LoadRule(nil)
+			S.notice = nil
+		else
+			Notice((L["%d rule(s) use this group: move or delete them first."]):format(count))
+		end
+		SyncForm()
+	end)
+	local groupBox = CreateFrame("EditBox", Config.UniqueName("ClickwiseSmartGroupName"), page, "InputBoxTemplate")
+	groupBox:SetPoint("TOPLEFT", page, "TOPLEFT", 6, -372)
+	groupBox:SetSize(120, 20)
+	groupBox:SetAutoFocus(false)
+	groupBox:SetMaxLetters(20)
+	groupBox:SetScript("OnEscapePressed", groupBox.ClearFocus)
+	groupBox:SetScript("OnEnterPressed", groupBox.ClearFocus)
+	Config.NewButton(page, 136, -372, 126, L["New group"], function()
+		if not S.set then Notice(L["Make or pick a rule set first."]) SyncForm() return end
+		local ok, err = Smart:CreateGroup(S.set, groupBox:GetText())
+		if ok then
+			LoadGroup(Smart.Trim(groupBox:GetText()))
+			groupBox:SetText("")
+			S.notice = nil
+		else
+			Notice(err)
+		end
+		SyncForm()
 	end)
 
 	----------------------------------------------------------------------------
@@ -286,8 +361,15 @@ local function Build(page)
 		row.drop:Refresh()
 	end
 
+	-- the group the rule belongs to -------------------------------------------
+	local GROUP_Y = COND_TOP + Smart.MAX_CONDS * COND_STEP - 4
+	local ruleGroupLabel = Config.NewLabel(page, RIGHT_X, GROUP_Y - 4, L["In group"])
+	local ruleGroupDrop = Config.NewDropdown(page, RIGHT_X + 66, GROUP_Y, 130, ruleGroupItems,
+		function() return S.ruleGroup or "" end,
+		function(value) S.ruleGroup = value ~= "" and value or nil; S.notice = nil; UpdateStatus() end)
+
 	-- the action ---------------------------------------------------------------
-	local ACTION_Y = COND_TOP + Smart.MAX_CONDS * COND_STEP - 4
+	local ACTION_Y = GROUP_Y - 30
 	local actionLabel = Config.NewLabel(page, RIGHT_X, ACTION_Y, L["Then"])
 	local actionItems = {}
 	local otherwiseItems = {}
@@ -306,20 +388,28 @@ local function Build(page)
 		function(value) S.kind = value; S.notice = nil; SyncAction(); UpdateStatus() end)
 
 	local ACTION_X = RIGHT_X + 150
-	local spellBox = CreateFrame("EditBox", Config.UniqueName("ClickwiseSmartSpell"), page, "InputBoxTemplate")
-	spellBox:SetPoint("TOPLEFT", page, "TOPLEFT", ACTION_X + 6, ACTION_Y - 20)
-	spellBox:SetSize(176, 20)
-	spellBox:SetAutoFocus(false)
-	spellBox:SetMaxLetters(60)
-	spellBox:SetScript("OnEscapePressed", spellBox.ClearFocus)
-	spellBox:SetScript("OnEnterPressed", spellBox.ClearFocus)
-	spellBox:SetScript("OnTextChanged", function(self, userInput)
-		if userInput then
-			S.spell = Smart.Trim(self:GetText())
-			S.notice = nil
-			UpdateStatus()
+
+	-- the spells and macros to pick from (read again when the popup opens: the spellbook and the macro frame change)
+	local spellItems, spellItemsFor
+	local function SpellItems()
+		if spellItemsFor ~= CW.spellList then
+			spellItemsFor, spellItems = CW.spellList, {}
+			for _, name in ipairs(CW.spellList) do
+				local _, _, icon = GetSpellInfo(name)
+				spellItems[#spellItems + 1] = {value = name, label = name, icon = icon}
+			end
 		end
-	end)
+		return spellItems
+	end
+	local spellPick = Config.NewPicker(page, ACTION_X, ACTION_Y - 20, 176, SpellItems,
+		function() return S.spell end,
+		function(value) S.spell = value; S.notice = nil; UpdateStatus() end,
+		L["(choose a spell)"])
+	local macroPick = Config.NewPicker(page, ACTION_X, ACTION_Y - 20, 176, Smart.MacroList,
+		function() return S.macro end,
+		function(value) S.macro = value; S.notice = nil; UpdateStatus() end,
+		L["(choose a macro)"])
+
 	local groupItems = {}
 	for _, group in ipairs(CW.BuffGroups) do groupItems[#groupItems + 1] = {value = group.key, label = group.label} end
 	local groupDrop = Config.NewDropdown(page, ACTION_X, ACTION_Y - 18, 130, groupItems,
@@ -332,10 +422,16 @@ local function Build(page)
 		FillKindItems()
 		kindDrop:Invalidate()
 		kindDrop:Refresh()
-		if S.kind == "spell" then spellBox:Show() else spellBox:Hide() end
-		if S.kind == "buff" then groupDrop:Show() else groupDrop:Hide() end
-		if S.kind == "taunt" then tauntNote:Show() else tauntNote:Hide() end
-		spellBox:SetText(S.spell or "")
+		local show = not S.grp
+		if show then actionLabel:Show(); kindDrop:Show() else actionLabel:Hide(); kindDrop:Hide() end
+		if show and S.kind == "spell" then spellPick:Show() else spellPick:Hide() end
+		if show and S.kind == "macro" then macroPick:Show() else macroPick:Hide() end
+		if show and S.kind == "buff" then groupDrop:Show() else groupDrop:Hide() end
+		if show and S.kind == "taunt" then tauntNote:Show() else tauntNote:Hide() end
+		spellPick:Close()
+		macroPick:Close()
+		spellPick:Refresh()
+		macroPick:Refresh()
 		groupDrop:Refresh()
 	end
 
@@ -345,26 +441,41 @@ local function Build(page)
 		local action = {type = S.kind}
 		if S.kind == "spell" then action.spell = Config.ResolveSpellName(S.spell or "") end
 		if S.kind == "buff" then action.group = S.group end
+		if S.kind == "macro" then action.macro = S.macro end
 		return action
+	end
+
+	-- every condition that needs a value has one? Otherwise says so and returns false.
+	local function CondsHaveValues()
+		for _, c in ipairs(S.conds) do
+			local def = COND[c.key]
+			if def and def.arg and (c.arg == nil or c.arg == "") then
+				Notice((L["Give the condition a value: %s"]):format(Smart.Cap(def.text)))
+				UpdateStatus()
+				return false
+			end
+		end
+		return true
 	end
 
 	local saveButton = Config.NewButton(page, RIGHT_X, BUTTON_Y, 120, L["Save rule"], function()
 		if not S.set then Notice(L["Make or pick a rule set first."]) UpdateStatus() return end
+		if S.grp then
+			if not CondsHaveValues() then return end
+			Smart:SaveGroup(S.set, S.grp, S.mode, S.conds)
+			S.notice = nil
+			SyncForm()
+			return
+		end
 		local action = CurrentAction()
-		if action.type == "spell" and (S.spell or "") == "" then Notice(L["Type a spell name."]) UpdateStatus() return end
+		if action.type == "spell" and (S.spell or "") == "" then Notice(L["Choose a spell."]) UpdateStatus() return end
+		if action.type == "macro" and (S.macro or "") == "" then Notice(L["Choose a macro."]) UpdateStatus() return end
 		if S.sel == 0 then
 			Smart:SetOtherwise(S.set, action)
 			S.notice = nil
 		else
-			local rule = {mode = S.mode, conds = S.conds, action = action}
-			for _, c in ipairs(S.conds) do
-				local def = COND[c.key]
-				if def and def.arg and (c.arg == nil or c.arg == "") then
-					Notice((L["Give the condition a value: %s"]):format(Smart.Cap(def.text)))
-					UpdateStatus()
-					return
-				end
-			end
+			if not CondsHaveValues() then return end
+			local rule = {mode = S.mode, conds = S.conds, action = action, group = S.ruleGroup}
 			local index, err = Smart:SaveRule(S.set, S.sel, rule)
 			if not index then
 				Notice(err)
@@ -388,19 +499,41 @@ local function Build(page)
 	status:SetJustifyH("LEFT")
 	status:SetJustifyV("TOP")
 
+	-- the conditions as they stand in the form (empty rows left out)
+	local function FormConds()
+		local out = {}
+		for _, c in ipairs(S.conds) do
+			if c.key and COND[c.key] then out[#out + 1] = {key = c.key, arg = c.arg, neg = c.neg} end
+		end
+		return out
+	end
+
 	-- the rule as it stands in the form
 	local function FormRule()
-		local rule = {mode = S.mode, conds = {}, action = CurrentAction()}
-		for _, c in ipairs(S.conds) do
-			if c.key and COND[c.key] then rule.conds[#rule.conds + 1] = {key = c.key, arg = c.arg, neg = c.neg} end
-		end
-		return rule
+		return {mode = S.mode, conds = FormConds(), action = CurrentAction(), group = S.ruleGroup}
 	end
 
 	-- your own frame: the set compiled for it, as the click would get it
 	local function OwnFrame()
 		for btn in pairs(CW.UnitFrame.frames) do
 			if btn.unit == "player" then return btn end
+		end
+	end
+
+	-- the warnings a list of conditions earns: a volatile one is read when the click is written, so it is skipped in combat
+	local function VolatileWarnings(lines, conds)
+		local health, other
+		for _, c in ipairs(conds) do
+			local def = COND[c.key]
+			if def and def.kind == "volatile" then
+				if def.watch == "health" then health = true else other = true end
+			end
+		end
+		-- one line whichever it is (they mean the same: skipped in combat), the status area has little room
+		if health then
+			lines[#lines + 1] = "|cffffcc00" .. L["Health is read when the click is written, so a rule that looks at it is skipped in combat (a macro cannot test health)."] .. "|r"
+		elseif other then
+			lines[#lines + 1] = "|cffffcc00" .. L["Auras are read when the click is written, so a rule that looks at them is skipped in combat."] .. "|r"
 		end
 	end
 
@@ -413,19 +546,31 @@ local function Build(page)
 			status:SetText(concat(lines, "\n"))
 			return
 		end
-		if S.sel == 0 then
+		if S.grp then
+			local text = Smart.CondsText({mode = S.mode, conds = FormConds()})
+			lines[#lines + 1] = L["Group"] .. " " .. S.grp .. ": " .. (text ~= "" and text or L["always"])
+			lines[#lines + 1] = L["Every rule of this group also needs these conditions."]
+			local members = Smart:GroupMembers(S.set, S.grp)
+			if #members == 0 then
+				lines[#lines + 1] = L["No rule is in this group yet: pick it under 'In group' when you edit a rule."]
+			else
+				lines[#lines + 1] = (L["Rules in this group: %s"]):format(concat(members, ", "))
+			end
+			VolatileWarnings(lines, FormConds())
+		elseif S.sel == 0 then
 			lines[#lines + 1] = L["Otherwise"] .. ": " .. Smart.ActionText(CurrentAction().type ~= "none" and CurrentAction() or nil)
 			lines[#lines + 1] = L["Used when no rule above holds. 'Nothing' leaves the click to whatever else is on it."]
 		else
 			local rule = FormRule()
 			lines[#lines + 1] = (S.sel and (S.sel .. ". ") or L["New rule"] .. ": ") .. Smart.RuleText(rule)
-			for _, c in ipairs(rule.conds) do
-				local def = COND[c.key]
-				if def.kind == "volatile" then
-					lines[#lines + 1] = "|cffffcc00" .. L["Auras are read when the click is written, so a rule that looks at them is skipped in combat."] .. "|r"
-					break
-				end
+			local conds = FormConds()
+			local group = Smart:GetGroup(S.set, S.ruleGroup)
+			if group then
+				for _, c in ipairs(group.conds) do conds[#conds + 1] = c end
+				local text = Smart.CondsText(group)
+				lines[#lines + 1] = L["Group"] .. " " .. S.ruleGroup .. ": " .. (text ~= "" and text or L["always"])
 			end
+			VolatileWarnings(lines, conds)
 			if rule.action.type == "taunt" then
 				for _, c in ipairs(rule.conds) do
 					if COND[c.key].unit then
@@ -436,17 +581,20 @@ local function Build(page)
 			end
 		end
 		local action = CurrentAction()
-		if action.type == "spell" and action.spell ~= "" and not CW.KnowsSpell(action.spell) then
+		if not S.grp and action.type == "spell" and action.spell ~= "" and not CW.KnowsSpell(action.spell) then
 			lines[#lines + 1] = "|cffffcc00" .. L["Not in your spellbook - a rule for it is left out until you learn it."] .. "|r"
+		end
+		if not S.grp and action.type == "macro" then
+			lines[#lines + 1] = L["Start the macro's spells with [@mouseover] to act on the frame you click."]
 		end
 		if #Smart:BindingsUsing(S.set) == 0 then
 			lines[#lines + 1] = L["No binding runs this set yet: pick 'Smart set' as the Action on the Bindings tab."]
 		end
 		local btn = OwnFrame()
 		if btn then
-			local clauses = Smart:Compile(btn, S.set, Smart.BUDGET)
-			if #clauses > 0 then
-				local text = "/cast " .. concat(clauses, "; ")
+			local clauses, _, rest = Smart:Compile(btn, S.set, Smart.BUDGET)
+			local text = concat(Smart.Lines(clauses, rest), "\n")
+			if text ~= "" then
 				lines[#lines + 1] = (L["For your own frame (%d / %d characters):"]):format(#text, Smart.MACRO_LIMIT)
 				lines[#lines + 1] = text
 			else
@@ -461,21 +609,28 @@ local function Build(page)
 		FillSetItems()
 		setDrop:Invalidate()
 		setDrop:Refresh()
+		FillGroupItems()
+		groupEditDrop:Invalidate()
+		groupEditDrop:Refresh()
+		ruleGroupDrop:Invalidate()
+		ruleGroupDrop:Refresh()
 		local set = Smart:GetSet(S.set)
-		local editing = S.sel == 0
+		local editingOtherwise = S.sel == 0 and not S.grp
 		modeButton:SetText(MODE_TEXT[S.mode] or MODE_TEXT.all)
 		for i = 1, Smart.MAX_CONDS do
 			SyncRow(i)
 			local row = condRows[i]
-			if editing or not set then
+			if editingOtherwise or not set then
 				row.check:Hide(); row.drop:Hide(); row.paramDrop:Hide(); row.box:Hide()
 			else
 				row.check:Show(); row.drop:Show()
 			end
 		end
-		if editing or not set then modeButton:Hide(); ruleLabel:Hide() else modeButton:Show(); ruleLabel:Show() end
+		if editingOtherwise or not set then modeButton:Hide(); ruleLabel:Hide() else modeButton:Show(); ruleLabel:Show() end
+		ruleLabel:SetText(S.grp and L["Group conditions"] or L["Conditions"])
+		if editingOtherwise or S.grp or not set then ruleGroupLabel:Hide(); ruleGroupDrop:Hide() else ruleGroupLabel:Show(); ruleGroupDrop:Show() end
 		SyncAction()
-		saveButton:SetText(editing and L["Save otherwise"] or L["Save rule"])
+		saveButton:SetText(S.grp and L["Save group"] or (editingOtherwise and L["Save otherwise"] or L["Save rule"]))
 		UpdateList()
 		UpdateStatus()
 	end
@@ -489,12 +644,16 @@ local function Build(page)
 		if not found then
 			S.set = names[1]
 			LoadRule(nil)
+		elseif S.grp and not Smart:GetGroup(S.set, S.grp) then
+			LoadRule(nil)
 		end
 		SyncForm()
 	end
 
 	page.cwState, page.cwRows, page.cwOtherRow, page.cwCondRows = S, rows, otherRow, condRows
-	page.cwSetDrop, page.cwKindDrop, page.cwGroupDrop, page.cwNameBox, page.cwSpellBox = setDrop, kindDrop, groupDrop, nameBox, spellBox
+	page.cwSetDrop, page.cwKindDrop, page.cwGroupDrop, page.cwNameBox = setDrop, kindDrop, groupDrop, nameBox
+	page.cwSpellPick, page.cwMacroPick = spellPick, macroPick
+	page.cwRuleGroupDrop, page.cwGroupEditDrop, page.cwGroupBox = ruleGroupDrop, groupEditDrop, groupBox
 	page.cwModeButton, page.cwSaveButton, page.cwStatus = modeButton, saveButton, status
 end
 

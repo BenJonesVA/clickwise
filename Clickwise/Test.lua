@@ -360,6 +360,7 @@ function Test:Tick()
 				u.threat, u.threatPct = random(0, 2), random(40, 100)
 			end
 			CW.UnitFrame:UpdateGUID(u.guid)
+			if CW.Smart then CW.Smart:OnUnitHealth(nil, u.token) end -- (the game's UNIT_HEALTH: a rule that looks at health)
 		end
 	end
 	if self.ticks % 3 == 0 then
@@ -447,18 +448,27 @@ function Test:Click(btn, mouse)
 		local spell = btn:GetAttribute(prefix .. "spell" .. suffix)
 		if spell then self:Cast(u, spell) end
 	elseif kind == "macro" then
-		local spell
+		-- the lines run one after another: a /cast that has a clause holding ends the click (one spell per press), so does a
+		-- /stopmacro whose conditions hold; a /click names the hidden button of a saved macro (Smart mode), which is not run here
+		local spell, macroButton
 		for line in (btn:GetAttribute(prefix .. "macrotext" .. suffix) or ""):gmatch("[^\n]+") do
-			local clauses = line:match("^/cast%s+(.+)$")
-			if clauses then
+			local cmd, args = line:match("^/(%a+)%s*(.*)$")
+			if cmd == "cast" or cmd == "click" or cmd == "stopmacro" then
 				-- an invented unit has no target for [harm,nodead] to test: those two are left out
-				clauses = AnswerDead(clauses:gsub(",harm,nodead%]", "]"), u)
-				local ok, action = pcall(SecureCmdOptionParse, clauses) -- picks the clause whose conditions hold now
-				if ok and action and action ~= "" then
-					spell = action
-					break
+				args = AnswerDead(args:gsub(",harm,nodead%]", "]"), u)
+				local ok, action = pcall(SecureCmdOptionParse, args) -- picks the clause whose conditions hold now
+				if ok and action then
+					if cmd == "stopmacro" then break end
+					if action ~= "" then
+						if cmd == "cast" then spell = action else macroButton = action end
+						break
+					end
 				end
 			end
+		end
+		if macroButton then
+			CW:Print((L["Test: your click runs the saved macro of the button %s on %s."]):format(macroButton, u.name))
+			return
 		end
 		if spell and spell == CW.ClickCast:TauntSpell() then
 			CW:Print((L["Test: your click casts %s on what %s is targeting."]):format(spell, u.name))

@@ -167,6 +167,105 @@ function UnitFrame:TooltipLines(btn)
 	return out
 end
 
+-- Where the tooltip appears: Blizzard's default place, or where the player dragged the placeholder box to (Move tooltip on the
+-- General tab). profile.tooltip.pos = {point = the screen corner it is measured from ("TOPLEFT", "BOTTOMRIGHT"...), x, y = the
+-- offset of the tooltip's same corner from it}: the nearest corner, so a tooltip that grows (more lines) grows away from the edge.
+function UnitFrame:TooltipPos()
+	local pos = CW.db.profile.tooltip.pos
+	if type(pos) == "table" and pos.point and pos.x and pos.y then return pos end
+end
+
+-- The corner-relative place of a frame the player put somewhere (its nearest screen corner).
+function UnitFrame.PlaceOf(frame)
+	local w, h = UIParent:GetWidth(), UIParent:GetHeight()
+	local left, right, top, bottom = frame:GetLeft(), frame:GetRight(), frame:GetTop(), frame:GetBottom()
+	if not (left and right and top and bottom and w and h) then return nil end
+	local vertical = ((top + bottom) / 2 > h / 2) and "TOP" or "BOTTOM"
+	local horizontal = ((left + right) / 2 > w / 2) and "RIGHT" or "LEFT"
+	return {point = vertical .. horizontal,
+		x = horizontal == "LEFT" and left or (right - w),
+		y = vertical == "BOTTOM" and bottom or (top - h)}
+end
+
+-- Put the shown tooltip where the player wants it (a no-op while they have not moved it).
+function UnitFrame:AnchorTooltip()
+	local pos = self:TooltipPos()
+	if not pos then return end
+	GameTooltip:ClearAllPoints()
+	GameTooltip:SetPoint(pos.point, UIParent, pos.point, pos.x, pos.y)
+end
+
+-- The placeholder box the player drags: a tooltip-sized frame that sits where the tooltip will. Built on first use.
+local mover
+local function PlaceMover()
+	local pos = UnitFrame:TooltipPos()
+	mover:ClearAllPoints()
+	if pos then
+		mover:SetPoint(pos.point, UIParent, pos.point, pos.x, pos.y)
+	else
+		mover:SetPoint("BOTTOMRIGHT", UIParent, "BOTTOMRIGHT", -(CONTAINER_OFFSET_X or 0) - 13, CONTAINER_OFFSET_Y or 70) -- (GameTooltip_SetDefaultAnchor's)
+	end
+end
+
+local function BuildMover()
+	mover = CreateFrame("Frame", "ClickwiseTooltipMover", UIParent)
+	mover:SetSize(210, 100)
+	mover:SetFrameStrata("FULLSCREEN_DIALOG")
+	mover:SetClampedToScreen(true)
+	mover:SetMovable(true)
+	mover:EnableMouse(true)
+	mover:RegisterForDrag("LeftButton")
+	mover:SetBackdrop({
+		bgFile = "Interface\\Tooltips\\UI-Tooltip-Background",
+		edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
+		tile = true, tileSize = 16, edgeSize = 16,
+		insets = {left = 4, right = 4, top = 4, bottom = 4},
+	})
+	mover:SetBackdropColor(0.1, 0.3, 0.6, 0.9)
+	local title = mover:CreateFontString(nil, "ARTWORK", "GameFontNormal")
+	title:SetPoint("TOP", mover, "TOP", 0, -12)
+	title:SetText(L["Unit tooltip"])
+	local hint = mover:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
+	hint:SetPoint("TOPLEFT", mover, "TOPLEFT", 12, -32)
+	hint:SetWidth(186)
+	hint:SetJustifyH("LEFT")
+	hint:SetText(L["Drag this box to where the unit tooltip should appear. Right-click it (or press Done moving) when it is in place."])
+	mover:SetScript("OnDragStart", mover.StartMoving)
+	mover:SetScript("OnDragStop", function(self)
+		self:StopMovingOrSizing()
+		local pos = UnitFrame.PlaceOf(self)
+		if pos then CW.db.profile.tooltip.pos = pos end
+		PlaceMover() -- (anchored to the corner it was measured from, like the tooltip will be)
+	end)
+	mover:SetScript("OnMouseUp", function(self, button)
+		if button == "RightButton" then UnitFrame:SetTooltipMover(false) end
+	end)
+	mover:Hide()
+end
+
+-- Show (true) or hide (false) the placeholder; called by the General tab.
+function UnitFrame:SetTooltipMover(on)
+	if on and not mover then BuildMover() end
+	if not mover then return end
+	if on then
+		PlaceMover()
+		mover:Show()
+	else
+		mover:Hide()
+	end
+	if self.moverCallback then self.moverCallback(on and true or false) end -- (the General tab's button follows)
+end
+
+function UnitFrame:IsTooltipMoverShown()
+	return mover and mover:IsShown() or false
+end
+
+-- Back to Blizzard's place.
+function UnitFrame:ResetTooltipPos()
+	CW.db.profile.tooltip.pos = nil
+	if mover and mover:IsShown() then PlaceMover() end
+end
+
 function UnitFrame:ShowTooltip(btn)
 	hovered = btn
 	if CW.db.profile.tooltip.mode == "OFF" or not (btn.unit and UnitExists(btn.unit)) then return end
@@ -178,6 +277,7 @@ function UnitFrame:ShowTooltip(btn)
 		UnitFrame_OnEnter(btn) -- Blizzard's: anchor and the standard unit tooltip
 	end
 	if GameTooltip:GetOwner() ~= btn then return end -- it declined (e.g. while targeting a spell)
+	self:AnchorTooltip()
 	local lines = self:TooltipLines(btn) -- (an error here still leaves the standard tooltip up)
 	for _, line in ipairs(lines) do
 		if line.right then

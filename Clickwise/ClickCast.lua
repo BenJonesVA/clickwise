@@ -360,6 +360,7 @@ local function BuildClickMacro(btn, items, button)
 	local gated, open = {}, {}
 	local smart = {}
 	local sets = {} -- the rule sets on this click (Smart.lua)
+	local rest -- what follows the first /cast line once a rule set runs a macro: {click = true, text} / {clauses = {...}} segments (Smart.lua)
 	for _, b in ipairs(items) do
 		local spell, unit = CastName(b, btn), b.unit or btn.unit
 		if b.type == "smart" then
@@ -390,23 +391,42 @@ local function BuildClickMacro(btn, items, button)
 		-- Smart:Compile counts each clause as its length + 2 (the "; " before it, also for the first), so what is left of the line
 		-- is the limit less the other clauses (length + 2 each) and less the 4 that "/cast " (6) overshoots that first count by
 		local budget = CW.Smart.MACRO_LIMIT - 4 - #table.concat(smart) - #table.concat(gated) - 2 * (#smart + #gated)
-		local ruleClauses = {}
+		local first = {}
+		for _, clause in ipairs(smart) do first[#first + 1] = clause end
 		for _, name in ipairs(sets) do
-			local clauses = CW.Smart:Compile(btn, name, budget)
-			for _, clause in ipairs(clauses) do
-				ruleClauses[#ruleClauses + 1] = clause
-				budget = budget - #clause - 2
+			local clauses, _, setRest, cost = CW.Smart:Compile(btn, name, budget, CW.Smart.PrevBrackets(first, rest))
+			budget = budget - cost
+			if not rest then
+				for _, clause in ipairs(clauses) do first[#first + 1] = clause end
+			elseif #clauses > 0 then
+				rest[#rest + 1] = {clauses = clauses}
+			end
+			if setRest then
+				rest = rest or {}
+				for _, seg in ipairs(setRest) do rest[#rest + 1] = seg end
 			end
 		end
-		for i = #ruleClauses, 1, -1 do table.insert(gated, 1, ruleClauses[i]) end
+		-- the click's other clauses (they collide with a set, so there are none unless the set compiled to nothing) come after
+		for _, clause in ipairs(gated) do
+			if not rest then first[#first + 1] = clause
+			elseif rest[#rest].clauses then table.insert(rest[#rest].clauses, clause)
+			else rest[#rest + 1] = {clauses = {clause}} end
+		end
+		gated = first
+	else
+		for i = #smart, 1, -1 do table.insert(gated, 1, smart[i]) end
 	end
-	for i = #smart, 1, -1 do table.insert(gated, 1, smart[i]) end
-	if #gated == 0 then return nil end
-	local text = "/cast " .. table.concat(gated, "; ")
+	if #gated == 0 and not rest then return nil end
+	local lines = {}
+	if #gated > 0 then lines[1] = "/cast " .. table.concat(gated, "; ") end
+	if rest then
+		for _, line in ipairs(CW.Smart.RestLines(rest, CW.Smart.PrevBrackets(gated))) do lines[#lines + 1] = line end
+	end
+	local text = table.concat(lines, "\n")
 	-- a left click that only has smart clauses keeps targeting the unit once combat starts (the macro replaced
 	-- the default target click); other buttons have nothing to fall back to and the editor says so
 	-- [belief] `/target [combat] <unit>` is understood by a secure macro; if not, the line is a harmless no-op
-	if #smart > 0 and #smart == #gated and button == "1" and btn.unit then
+	if #smart > 0 and #smart == #gated and not rest and button == "1" and btn.unit then
 		text = text .. "\n/target [combat] " .. btn.unit
 	end
 	return text
@@ -634,7 +654,10 @@ function ClickCast:ApplyAll()
 	local gated = self:HasGatedBinding()
 	self:RebuildRez() -- the spellbook may have changed
 	self:RebuildTaunt()
-	if CW.Smart then CW.Smart:RefreshUsed() end -- which rule sets the bindings run (and whether they look at auras)
+	if CW.Smart then
+		CW.Smart:RefreshUsed() -- which rule sets the bindings run (and whether they look at auras / health)
+		CW.Smart:SyncMacros() -- the hidden buttons that run the saved macros a rule names
+	end
 	if CW.Debuffs and self:HasCureBinding() then
 		CW.Debuffs:RefreshAll() -- every button's cure pick must be current before its click is written
 	end

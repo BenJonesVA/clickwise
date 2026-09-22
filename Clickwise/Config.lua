@@ -17,7 +17,7 @@ CW.Config = Config
 Config.builders = {} -- page key -> function(page); filled by ConfigBindings.lua etc.
 
 local WINDOW_W, WINDOW_H = 680, 520
-local TAB_W, TAB_GAP = 76, 3 -- eight tabs: 24 + 8 * 76 + 7 * 3 = 653 still fits the window
+local TAB_MIN_W, TAB_PAD, TAB_GAP = 52, 24, 3 -- each tab is as wide as its text (+ padding), so "Assignments" is not squeezed into the width of "Smart"
 
 local nameCounter = 0
 function Config.UniqueName(prefix)
@@ -144,6 +144,122 @@ function Config.NewDropdown(page, x, y, width, items, get, set)
 	return dd
 end
 
+-- A dropdown for a LONG list (the spellbook, the saved macros): a button that shows the current choice and, when clicked, opens a
+-- popup with a search box and a scrolling list (a plain dropdown has no scroll and runs off the screen at that length).
+--   getItems() -> {{value =, label =, icon =}, ...}, read whenever the popup opens or the search text changes
+--   get() -> the chosen value (shown as its label; the value itself when it is not in the list); set(value) on a pick
+-- The popup closes on a pick, on Escape in the search box, when the button is clicked again and when the page is hidden.
+local PICK_ROWS, PICK_ROW_H = 9, 18
+function Config.NewPicker(page, x, y, width, getItems, get, set, emptyText)
+	local name = Config.UniqueName("ClickwisePicker")
+	local button = CreateFrame("Button", name, page, "UIPanelButtonTemplate")
+	button:SetPoint("TOPLEFT", page, "TOPLEFT", x, y)
+	button:SetSize(width, 22)
+
+	local popW = math.max(width, 250)
+	local pop = CreateFrame("Frame", name .. "Pop", page)
+	pop:SetSize(popW, 34 + PICK_ROWS * PICK_ROW_H)
+	pop:SetPoint("TOPRIGHT", button, "BOTTOMRIGHT", 0, -2) -- (the pickers sit at the right of their page: grow to the left)
+	pop:SetFrameStrata("FULLSCREEN_DIALOG")
+	pop:EnableMouse(true) -- (clicks on it must not fall through to what it covers)
+	pop:SetBackdrop({
+		bgFile = "Interface\\DialogFrame\\UI-DialogBox-Background",
+		edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
+		tile = true, tileSize = 16, edgeSize = 14,
+		insets = {left = 4, right = 4, top = 4, bottom = 4},
+	})
+	pop:Hide()
+
+	local filter = CreateFrame("EditBox", name .. "Filter", pop, "InputBoxTemplate")
+	filter:SetPoint("TOPLEFT", pop, "TOPLEFT", 12, -8)
+	filter:SetSize(popW - 26, 20)
+	filter:SetAutoFocus(false)
+	filter:SetMaxLetters(40)
+
+	local scroll = CreateFrame("ScrollFrame", name .. "Scroll", pop, "FauxScrollFrameTemplate")
+	scroll:SetPoint("TOPLEFT", pop, "TOPLEFT", 8, -32)
+	scroll:SetSize(popW - 34, PICK_ROWS * PICK_ROW_H)
+
+	local filtered, rows = {}, {}
+	local function Wheel(_, delta)
+		local bar = _G[name .. "ScrollScrollBar"]
+		if bar then bar:SetValue(bar:GetValue() - delta * PICK_ROW_H * 2) end
+	end
+	local function Update(resetScroll)
+		local text = string.lower((filter:GetText() or ""):gsub("^%s+", ""):gsub("%s+$", ""))
+		filtered = {}
+		for _, item in ipairs(getItems()) do
+			if text == "" or string.find(string.lower(item.label), text, 1, true) then filtered[#filtered + 1] = item end
+		end
+		if resetScroll then scroll:SetVerticalScroll(0) end
+		FauxScrollFrame_Update(scroll, #filtered, PICK_ROWS, PICK_ROW_H)
+		local offset = FauxScrollFrame_GetOffset(scroll)
+		for i = 1, PICK_ROWS do
+			local row, item = rows[i], filtered[i + offset]
+			if item then
+				row.item = item
+				row.icon:SetTexture(item.icon or "Interface\\Icons\\INV_Misc_QuestionMark")
+				row.text:SetText(item.label)
+				row:Show()
+			else
+				row.item = nil
+				row:Hide()
+			end
+		end
+	end
+	scroll:SetScript("OnVerticalScroll", function(self, offset)
+		FauxScrollFrame_OnVerticalScroll(self, offset, PICK_ROW_H, function() Update() end)
+	end)
+	for i = 1, PICK_ROWS do
+		local row = CreateFrame("Button", nil, pop)
+		row:SetSize(popW - 34, PICK_ROW_H)
+		row:SetPoint("TOPLEFT", pop, "TOPLEFT", 8, -32 - (i - 1) * PICK_ROW_H)
+		row:SetHighlightTexture("Interface\\QuestFrame\\UI-QuestTitleHighlight")
+		row:EnableMouseWheel(true)
+		row:SetScript("OnMouseWheel", Wheel)
+		row.icon = row:CreateTexture(nil, "ARTWORK")
+		row.icon:SetSize(16, 16)
+		row.icon:SetPoint("LEFT", row, "LEFT", 2, 0)
+		row.text = row:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
+		row.text:SetPoint("LEFT", row.icon, "RIGHT", 4, 0)
+		row.text:SetJustifyH("LEFT")
+		row:SetScript("OnClick", function(self)
+			if self.item then
+				pop:Hide()
+				set(self.item.value)
+				button:Refresh()
+			end
+		end)
+		rows[i] = row
+	end
+	filter:SetScript("OnTextChanged", function(_, userInput) if userInput then Update(true) end end)
+	filter:SetScript("OnEscapePressed", function() pop:Hide() end)
+
+	function button:Refresh()
+		local value = get()
+		local text
+		for _, item in ipairs(getItems()) do
+			if item.value == value then text = item.label break end
+		end
+		if not text and value ~= nil and value ~= "" then text = tostring(value) end
+		self:SetText(text or emptyText or L["(choose)"])
+	end
+	function button:Close() pop:Hide() end
+	button:SetScript("OnClick", function()
+		if pop:IsShown() then
+			pop:Hide()
+		else
+			filter:SetText("")
+			Update(true)
+			pop:Show()
+		end
+	end)
+	page:HookScript("OnHide", function() pop:Hide() end)
+	button.pop, button.filter, button.rows = pop, filter, rows -- (the harness drives them)
+	page.controls[#page.controls + 1] = button
+	return button
+end
+
 function Config.NewButton(parent, x, y, width, label, onClick)
 	local b = CreateFrame("Button", Config.UniqueName("ClickwiseCfgButton"), parent, "UIPanelButtonTemplate")
 	b:SetPoint("TOPLEFT", parent, "TOPLEFT", x, y)
@@ -216,6 +332,18 @@ local function BuildGeneral(page)
 	-- one above the other: side by side the first label ran into the second box
 	Config.NewCheck(page, 336, -180, L["Show click bindings"], {"tooltip", "bindings"})
 	Config.NewCheck(page, 336, -206, L["Show buff status"], {"tooltip", "buffs"})
+	-- where the tooltip appears: drag a placeholder box there (UnitFrame.lua); Reset goes back to Blizzard's place
+	local moveButton
+	local function MoveText()
+		moveButton:SetText(CW.UnitFrame:IsTooltipMoverShown() and L["Done moving"] or L["Move tooltip"])
+	end
+	moveButton = Config.NewButton(page, 486, -182, 134, L["Move tooltip"], function()
+		CW.UnitFrame:SetTooltipMover(not CW.UnitFrame:IsTooltipMoverShown())
+	end)
+	CW.UnitFrame.moverCallback = MoveText -- (a right-click on the box hides it: the button follows)
+	Config.NewButton(page, 486, -208, 134, L["Reset tooltip"], function() CW.UnitFrame:ResetTooltipPos() end)
+	moveButton.Refresh = MoveText
+	page.controls[#page.controls + 1] = moveButton
 
 	Config.NewButton(page, 8, -180, 150, L["Reset position"], function()
 		CW.Frames:ResetPosition()
@@ -409,11 +537,13 @@ function Config:Build()
 	local x = 24
 	for i, tab in ipairs(TABS) do
 		local b = CreateFrame("Button", "ClickwiseConfigTab" .. i, f, "UIPanelButtonTemplate")
-		b:SetSize(TAB_W, 24)
-		b:SetPoint("TOPLEFT", f, "TOPLEFT", x, -44)
 		b:SetText(tab.label)
+		local fs = b:GetFontString()
+		local width = math.max(TAB_MIN_W, floor((fs and fs:GetStringWidth() or 0) + TAB_PAD))
+		b:SetSize(width, 24)
+		b:SetPoint("TOPLEFT", f, "TOPLEFT", x, -44)
 		b:SetScript("OnClick", function() Config:SelectTab(i) end)
-		x = x + TAB_W + TAB_GAP
+		x = x + width + TAB_GAP
 		tab.button = b
 
 		local page = CreateFrame("Frame", nil, f)
