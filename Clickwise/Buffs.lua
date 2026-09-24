@@ -41,8 +41,19 @@
 -- `toggle` group (a click while it is up may cancel it) is never picked by the Assigned buff click while it is up.
 --
 -- The icons are plain textures under a non-secure child frame, so painting them is legal in combat.
--- Rank comparison / auto-downgrade for low-level targets is deliberately not done: 3.3.5 exposes no
--- reliable rank-vs-level data and the aura "rank" field is not trustworthy (see lessonslearned.md).
+--
+-- RANK COMPARISON: a group aura from someone ELSE counts as OTHER (satisfied) only when it is not a stale
+-- lower rank of a spell the player also knows. The comparison only fires when the aura's exact spell name
+-- (e.g. "Power Word: Fortitude") is a name in the player's OWN spellbook: a different spell in the same
+-- group (someone else's Prayer of Fortitude when the player only knows the single-target version) is a
+-- different rank ladder entirely, so it is left alone and counts as satisfied like before. Both ranks come
+-- from parsing the digits out of a "Rank N" string: the player's own from CW.spellRank (built from their
+-- spellbook, reliable), the aura's from UnitAura's rank return (2nd value) - the field HealBot avoids
+-- (see lessonslearned.md) because it is not always trustworthy, so `/cw buffs <unit>` prints it for the
+-- user to confirm on this client before relying on it. A spell with no ranks (Blessing of Kings, the
+-- shouts...) parses to nil on both sides and is skipped, same as an aura the player does not know at all.
+-- Auto-downgrade for low-level targets (casting a deliberately lower rank) is a different feature and is
+-- still not done.
 
 local CW = Clickwise
 local Buffs = CW:NewModule("Buffs", "AceEvent-3.0", "AceTimer-3.0")
@@ -81,6 +92,24 @@ end
 -- Alpha factor for a pulse phase in [0, 1): 1 at phase 0, FLASH_MIN_ALPHA at phase 0.5.
 function Buffs.FlashAlpha(phase)
 	return FLASH_MIN_ALPHA + (1 - FLASH_MIN_ALPHA) * (0.5 + 0.5 * cos(phase * 2 * pi))
+end
+
+-- Plain number out of a "Rank N" string, or nil for "" / nil / anything without digits (see the RANK
+-- COMPARISON note above).
+local function ParseRank(text)
+	if type(text) ~= "string" then return nil end
+	local digits = text:match("%d+")
+	return digits and tonumber(digits) or nil
+end
+
+-- The player's own current rank of a KNOWN spell name, or nil (not known, or the spell has no ranks).
+function Buffs.MyRank(name)
+	return ParseRank(CW.spellRank[name])
+end
+
+-- The rank of a helpful aura already identified by name, from UnitAura's own rank return.
+function Buffs.AuraRank(rank)
+	return ParseRank(rank)
 end
 
 local groupByKey = {}
@@ -457,10 +486,10 @@ function Buffs:DumpUnit(unit)
 	lines[1] = ("role: %s, class: %s, in combat: %s, matched rule: %s"):format(tostring(role), tostring(class),
 		UnitAffectingCombat(unit) and "yes" or "no", rule)
 	for i = 1, 40 do
-		local name, _, _, _, _, _, _, caster, _, _, spellId = UnitAura(unit, i, "HELPFUL")
+		local name, rank, _, _, _, _, _, caster, _, _, spellId = UnitAura(unit, i, "HELPFUL")
 		if not name then break end
-		lines[#lines + 1] = ("%d. %s  [caster: %s, spell %s, group: %s]"):format(
-			i, name, tostring(caster), tostring(spellId), groupOf[name] or "-")
+		lines[#lines + 1] = ("%d. %s  [caster: %s, spell %s, rank: %q, group: %s]"):format(
+			i, name, tostring(caster), tostring(spellId), rank or "", groupOf[name] or "-")
 	end
 	if #lines == 1 then lines[2] = "No buffs on " .. unit .. "." end
 	-- how the rule's entries were sorted for the frame showing this unit
@@ -614,7 +643,7 @@ function Buffs:Scan(btn)
 
 	local isSelf = UnitIsUnit(unit, "player")
 	for i = 1, 40 do
-		local name, _, _, _, _, duration, expires, caster = UnitAura(unit, i, "HELPFUL")
+		local name, rank, _, _, _, duration, expires, caster = UnitAura(unit, i, "HELPFUL")
 		if not name then break end
 		local key = groupOf[name]
 		local mine = type(caster) == "string" and UnitIsUnit(caster, "player")
@@ -632,7 +661,12 @@ function Buffs:Scan(btn)
 					exp[key] = expires
 				end
 			elseif state[key] == nil then
-				state[key] = OTHER
+				-- someone else's aura: satisfied, UNLESS it is a stale lower rank of a spell the player also
+				-- knows (see the RANK COMPARISON note above) - then it is left missing so a click upgrades it
+				local myRank, auraRank = Buffs.MyRank(name), Buffs.AuraRank(rank)
+				if not (myRank and auraRank and auraRank < myRank) then
+					state[key] = OTHER
+				end
 			end
 		end
 	end

@@ -506,12 +506,12 @@ function ClickCast:ApplyToButton(btn)
 	btn.cwSigApplied = Signature(btn)
 end
 
--- Is any binding gated on combat (so unit combat states matter)?
+-- Is any binding gated on combat, or does a used Smart set read a unit's combat state (so unit combat states matter)?
 function ClickCast:HasGatedBinding()
 	for _, b in ipairs(self:GetBindings()) do
 		if CASTS[b.type] and WhenOf(b) ~= "ANY" then return true end
 	end
-	return false
+	return CW.Smart and CW.Smart.usesUnitCombat and true or false
 end
 
 -- Does any binding's attribute depend on live state (unit, unit combat, assigned pick, cure / rez pick, a rule set)?
@@ -651,16 +651,16 @@ function ClickCast:ApplyAll()
 		CW:RunOOC("clickcast.apply", ClickCast.ApplyAll, ClickCast)
 		return
 	end
-	local gated = self:HasGatedBinding()
 	self:RebuildRez() -- the spellbook may have changed
 	self:RebuildTaunt()
 	if CW.Smart then
-		CW.Smart:RefreshUsed() -- which rule sets the bindings run (and whether they look at auras / health)
+		CW.Smart:RefreshUsed() -- which rule sets the bindings run (and whether they look at auras / health / unit combat)
 		CW.Smart:SyncMacros() -- the hidden buttons that run the saved macros a rule names
 	end
 	if CW.Debuffs and self:HasCureBinding() then
 		CW.Debuffs:RefreshAll() -- every button's cure pick must be current before its click is written
 	end
+	local gated = self:HasGatedBinding() -- after RefreshUsed: a Smart set's own need to poll must already be known
 	for btn in pairs(CW.UnitFrame.frames) do
 		btn.cwRezSpell = RezPick(btn) -- likewise the rez pick
 		btn.cwUnitCombat = gated and UnitFights(btn) or false -- read fresh: the poll may not have run yet

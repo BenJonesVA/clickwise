@@ -15,19 +15,22 @@
 -- Health ("unit's health is below N%") is a volatile condition like an aura: a macro cannot read health and the restricted
 -- environment has no health function either, so the answer is Lua's, folded in while the click is written (out of combat) and
 -- gated with [nocombat]. It is only ever right out of combat, and the editor says so. Its events are UNIT_HEALTH / UNIT_MAXHEALTH.
+-- "Unit is in combat" is the same kind of volatile condition, for the same reason ClickCast.lua gates a click on combat: only
+-- `[combat]` / `[nocombat]` exist, and they test the PLAYER, never another unit. There is no reliable per-unit combat-flag event
+-- on 3.3.5 either, so this reuses ClickCast's own 0.5s poll (`btn.cwUnitCombat`) instead of a second one: the condition just
+-- reads that field, and ClickCast is told to keep polling while any used set has a rule that reads it (see HasGatedBinding).
 --
--- Two more things a rule can carry:
---   group    a rule may belong to a GROUP of its set: profile.smartSets[CLASS][set].groups[name] = {mode, conds}. A group is a
---            condition of its own that every member rule also needs, so it compiles by AND-ing the group's conditions into each
---            member (a stable group condition folds away, a live one is repeated in each bracket, which is what the macro
---            length budget pays for). The rules stay one ordered list: the first that holds wins, in or out of a group.
---   macro    the action "run saved macro N" (a macro of the macro frame, picked by name). A macro is many lines and does not fit a
---            /cast clause, so it runs through a hidden secure button of ours ("ClickwiseMacroN", macrotext = the macro's body,
---            rewritten out of combat when the macro changes) and the rule becomes a `/click [conds] ClickwiseMacroN` line. The
---            click's lines then run one after another with a `/stopmacro <what fired so far>` between them, so the first rule
---            that holds still wins: /cast [a] X; [b] Y / stopmacro [a][b] / click [c] Btn / stopmacro [c] / cast [d] Z.
---            [belief] `/click` may name a secure button, and `/stopmacro [conds]` exists, in a secure macro on 3.3.5;
---            `/cw buffcheck` looks for both commands.
+-- One more thing a rule can carry: the action "run saved macro N" (a macro of the macro frame, picked by name). A macro is many
+-- lines and does not fit a /cast clause, so it runs through a hidden secure button of ours ("ClickwiseMacroN", macrotext = the
+-- macro's body, rewritten out of combat when the macro changes) and the rule becomes a `/click [conds] ClickwiseMacroN` line.
+-- The click's lines then run one after another with a `/stopmacro <what fired so far>` between them, so the first rule that
+-- holds still wins: /cast [a] X; [b] Y / stopmacro [a][b] / click [c] Btn / stopmacro [c] / cast [d] Z.
+-- [belief] `/click` may name a secure button, and `/stopmacro [conds]` exists, in a secure macro on 3.3.5;
+-- `/cw buffcheck` looks for both commands.
+--
+-- The action "apply assigned buffs" casts whatever the Assignments tab (Buffs.lua) would cast for the unit: its own per-unit
+-- scan already picks the spell (btn.cwAssignedSpell, the same field the Bindings tab's "Assigned buff" click reads), so this
+-- action needs no macro/click plumbing of its own.
 --
 -- Compiling folds the frozen conditions away: an all-of rule with a false frozen condition is dropped, an any-of rule keeps
 -- one bracket per branch that can still hold, and a clause that ends up with nothing to test (only target=) is
@@ -53,8 +56,6 @@ Smart.MACRO_LIMIT = 255 -- the longest macro line taken as safe (also the most t
 Smart.BUDGET = Smart.MACRO_LIMIT - 4 -- what a set alone may use in Compile's count (a clause = its length + 2): "/cast " + the clauses = at most the limit
 Smart.MAX_CONDS = 4     -- conditions one rule can hold (the editor has that many rows)
 Smart.MAX_RULES = 8     -- rules one set can hold: the macro line has no room for many more clauses anyway
-Smart.MAX_GROUPS = 6    -- groups one set can hold
-local MAX_TERMS = 8     -- brackets one rule may compile to (a group's any-of times a rule's any-of multiplies them)
 local FLUSH_DELAY = 0.2 -- UNIT_AURA / UNIT_HEALTH are spammy in raids; coalesce per GUID (as Buffs.lua does)
 
 --------------------------------------------------------------------------------
@@ -118,6 +119,8 @@ Smart.CONDITIONS = {
 
 	{key = "health", kind = "volatile", watch = "health", arg = "choice", text = L["unit's health is below"], choices = healthChoices,
 		test = function(_, unit, arg) return HealthBelow(unit, arg) end},
+	{key = "unitcombat", kind = "volatile", watch = "unitcombat", text = L["unit is in combat"],
+		test = function(btn) return btn.cwUnitCombat and true or false end},
 	{key = "debuffcure", kind = "volatile", text = L["unit has a curable debuff"],
 		test = function(_, unit)
 			return HasAura(unit, "HARMFUL", function(_, debuffType) return debuffType and CW.Debuffs and CW.Debuffs:CanCure(debuffType) end)
@@ -145,6 +148,7 @@ Smart.ACTIONS = {
 	{value = "buff", label = L["Buff group"]},
 	{value = "taunt", label = L["Taunt"]},
 	{value = "macro", label = L["Run macro"]},
+	{value = "assigned", label = L["Assigned buff"]},
 	{value = "none", label = L["Nothing"]}, -- for "otherwise" only: the set then ends without a fallback
 }
 
@@ -224,6 +228,7 @@ function Smart.ActionText(action)
 		return L["Taunt"] .. (spell and (": " .. spell) or "")
 	end
 	if action.type == "macro" then return L["Macro"] .. ": " .. (action.macro or "?") end
+	if action.type == "assigned" then return L["Assigned buff"] end
 	return L["nothing"]
 end
 
@@ -236,10 +241,10 @@ local function CondsText(rule)
 end
 Smart.CondsText = CondsText
 
--- "[Tank] IF a AND b THEN X"
+-- "IF a AND b THEN X"
 function Smart.RuleText(rule)
 	local ifText = CondsText(rule)
-	return (rule.group and ("[" .. rule.group .. "] ") or "") .. (ifText ~= "" and (ifText .. " ") or "") .. L["THEN"] .. " " .. Smart.ActionText(rule.action)
+	return (ifText ~= "" and (ifText .. " ") or "") .. L["THEN"] .. " " .. Smart.ActionText(rule.action)
 end
 
 --------------------------------------------------------------------------------
@@ -279,15 +284,17 @@ function Smart:BindingsUsing(name)
 	return out
 end
 
--- The set names bindings use now, and whether any of their rules or groups looks at auras (then UNIT_AURA matters) or at
--- health (then UNIT_HEALTH does).
+-- The set names bindings use now, and whether any of their rules looks at auras (then UNIT_AURA matters), at
+-- health (then UNIT_HEALTH does), or at another unit's combat state (then ClickCast must keep polling it).
 function Smart:RefreshUsed()
-	local used, seen, auras, health = {}, {}, false, false
+	local used, seen, auras, health, unitCombat = {}, {}, false, false, false
 	local function look(conds)
 		for _, cond in ipairs(conds or {}) do
 			local def = COND[cond.key]
 			if def and def.kind == "volatile" then
-				if def.watch == "health" then health = true else auras = true end
+				if def.watch == "health" then health = true
+				elseif def.watch == "unitcombat" then unitCombat = true
+				else auras = true end
 			end
 		end
 	end
@@ -297,11 +304,10 @@ function Smart:RefreshUsed()
 			used[#used + 1] = b.set
 			local set = self:GetSet(b.set)
 			for _, rule in ipairs(set and set.rules or {}) do look(rule.conds) end
-			for _, group in pairs(set and set.groups or {}) do look(group.conds) end
 		end
 	end
 	sort(used)
-	self.used, self.usesAuras, self.usesHealth = used, auras, health
+	self.used, self.usesAuras, self.usesHealth, self.usesUnitCombat = used, auras, health, unitCombat
 end
 
 -- Something about the sets changed: the clicks are rewritten (out of combat, like every binding change).
@@ -356,7 +362,6 @@ function Smart.CleanRule(rule)
 		if #out.conds >= Smart.MAX_CONDS then break end
 	end
 	for k, v in pairs(rule.action or {}) do out.action[k] = v end
-	if type(rule.group) == "string" and rule.group ~= "" then out.group = rule.group end
 	return out
 end
 
@@ -365,7 +370,6 @@ function Smart:SaveRule(name, index, rule)
 	local set = self:GetSet(name)
 	if not set then return nil end
 	rule = Smart.CleanRule(rule)
-	if rule.group and not (set.groups and set.groups[rule.group]) then rule.group = nil end -- (a group that is gone)
 	if index and set.rules[index] then
 		set.rules[index] = rule
 	else
@@ -405,70 +409,12 @@ function Smart:SetOtherwise(name, action)
 	return true
 end
 
--- Groups: a condition that its member rules (rule.group = the group's name) share. Stored as set.groups[name] = {mode, conds}.
-function Smart:GroupNames(name)
-	local set = self:GetSet(name)
-	local out = {}
-	for group in pairs(set and set.groups or {}) do out[#out + 1] = group end
-	sort(out)
-	return out
-end
-
-function Smart:GetGroup(name, group)
-	local set = self:GetSet(name)
-	return set and group and set.groups and set.groups[group] or nil
-end
-
--- Returns true, or false and the reason.
-function Smart:CreateGroup(name, group)
-	local set = self:GetSet(name)
-	if not set then return false, L["Make or pick a rule set first."] end
-	group = Trim(group)
-	if group == "" then return false, L["Type a name for the group."] end
-	if #group > 20 then return false, L["That name is too long (20 characters at most)."] end
-	set.groups = set.groups or {}
-	if set.groups[group] then return false, L["A group with that name exists."] end
-	if #self:GroupNames(name) >= Smart.MAX_GROUPS then return false, (L["A set holds at most %d groups."]):format(Smart.MAX_GROUPS) end
-	set.groups[group] = {mode = "all", conds = {}}
-	return true
-end
-
--- The rules that belong to a group (their indexes).
-function Smart:GroupMembers(name, group)
-	local set, out = self:GetSet(name), {}
-	for i, rule in ipairs(set and set.rules or {}) do
-		if rule.group == group then out[#out + 1] = i end
-	end
-	return out
-end
-
--- Refused while a rule is in the group (it would lose its condition and start to apply everywhere): returns false and the count.
-function Smart:DeleteGroup(name, group)
-	local set = self:GetSet(name)
-	if not (set and set.groups and set.groups[group]) then return false, 0 end
-	local members = self:GroupMembers(name, group)
-	if #members > 0 then return false, #members end
-	set.groups[group] = nil
-	self:Changed()
-	return true
-end
-
--- Save what a group holds: its mode and conditions (empty rows dropped, values copied).
-function Smart:SaveGroup(name, group, mode, conds)
-	local set = self:GetSet(name)
-	if not (set and set.groups and set.groups[group]) then return false end
-	local clean = Smart.CleanRule({mode = mode, conds = conds})
-	set.groups[group] = {mode = clean.mode, conds = clean.conds}
-	self:Changed()
-	return true
-end
-
 --------------------------------------------------------------------------------
 -- Compiling
 --------------------------------------------------------------------------------
 -- The spell an action casts, and (for a taunt) what to append to each bracket; or nil and the reason. A macro action gives
 -- the name of its secure button and a fourth result, true: the rule is a `/click` line, not a clause of the /cast line.
-local function ActionInfo(action, unit)
+local function ActionInfo(action, unit, btn)
 	if type(action) ~= "table" then return nil, L["no action"] end
 	if action.type == "spell" then
 		if not action.spell or action.spell == "" then return nil, L["no spell named"] end
@@ -489,6 +435,10 @@ local function ActionInfo(action, unit)
 		local button = Smart.MacroButton(action.macro)
 		if not button then return nil, L["the macro has no button yet (it is set up out of combat)"] end
 		return button, nil, unit, true
+	elseif action.type == "assigned" then
+		local pick = btn and btn.cwAssignedSpell
+		if not pick then return nil, L["nothing is assigned to this unit right now"] end
+		return pick, nil, unit
 	end
 	return nil, L["no action"]
 end
@@ -575,19 +525,11 @@ end
 
 -- The clause of one rule for this unit: text (nil when the rule cannot apply), terminal (nothing left to test, so the
 -- macro ends here) and, when it cannot apply, why; the fourth result is true for a macro (a `/click` line).
-local function CompileRule(rule, set, btn, unit)
-	local spell, extra, target, click = ActionInfo(rule.action, unit)
+local function CompileRule(rule, btn, unit)
+	local spell, extra, target, click = ActionInfo(rule.action, unit, btn)
 	if not spell then return nil, false, extra end
 	local terms, why = CondTerms(rule.conds or {}, rule.mode, btn, unit, rule.action.type == "taunt")
 	if not terms then return nil, false, why end
-	if rule.group then
-		local group = set.groups and set.groups[rule.group]
-		if not group then return nil, false, (L["group %s no longer exists"]):format(rule.group) end
-		local groupTerms, groupWhy = CondTerms(group.conds or {}, group.mode, btn, unit, rule.action.type == "taunt")
-		if not groupTerms then return nil, false, (L["group %s: %s"]):format(rule.group, groupWhy) end
-		terms = AndTerms(groupTerms, terms)
-		if #terms > MAX_TERMS then return nil, false, L["too many combinations of conditions (a group multiplies them)"] end
-	end
 	local brackets = {}
 	for _, term in ipairs(terms) do
 		if not term.gate and #term.parts == 0 and not extra then
@@ -675,7 +617,7 @@ function Smart:Compile(btn, name, budget, before)
 	end
 	local stopped
 	for i, rule in ipairs(set.rules) do
-		local text, terminal, why, click = CompileRule(rule, set, btn, unit)
+		local text, terminal, why, click = CompileRule(rule, btn, unit)
 		if not text then
 			notes[#notes + 1] = ("%d. %s  ->  %s: %s"):format(i, Smart.RuleText(rule), L["skipped"], why)
 		elseif not add(text, click) then
@@ -694,7 +636,7 @@ function Smart:Compile(btn, name, budget, before)
 		end
 	end
 	if not stopped and set.otherwise then
-		local spell, extra, target, click = ActionInfo(set.otherwise, unit)
+		local spell, extra, target, click = ActionInfo(set.otherwise, unit, btn)
 		if not spell then
 			notes[#notes + 1] = (L["otherwise: %s  ->  skipped: %s"]):format(Smart.ActionText(set.otherwise), extra)
 		else

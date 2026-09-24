@@ -395,40 +395,23 @@ L["Used when no rule above holds. 'Nothing' leaves the click to whatever else is
 L["at the enemy the unit is targeting"] = true
 L["not"] = true
 
--- Smart mode: health, macros, groups (Smart.lua, ConfigSmart.lua)
+-- Smart mode: health, unit combat, macros, assigned buffs (Smart.lua, ConfigSmart.lua)
 L["(choose a macro)"] = true
 L["(choose a spell)"] = true
 L["(choose)"] = true
-L["(no group)"] = true
-L["(no groups yet)"] = true
-L["A group with that name exists."] = true
-L["A set holds at most %d groups."] = true
 L["Choose a macro."] = true
 L["Choose a spell."] = true
-L["Delete group"] = true
-L["Every rule of this group also needs these conditions."] = true
-L["Group"] = true
-L["Group conditions"] = true
-L["Groups (a condition shared by rules)"] = true
 L["Health is read when the click is written, so a rule that looks at it is skipped in combat (a macro cannot test health)."] = true
-L["In group"] = true
-L["New group"] = true
-L["No rule is in this group yet: pick it under 'In group' when you edit a rule."] = true
 L["Run macro"] = true
-L["Save group"] = true
-L["Rules in this group: %s"] = true
-L["That name is too long (20 characters at most)."] = true
-L["Type a name for the group."] = true
-L["always"] = true
-L["group %s no longer exists"] = true
-L["group %s: %s"] = true
+L["Start the macro's spells with [@mouseover] to act on the frame you click."] = true
+L["The unit's combat state is read when the click is written, so a rule that looks at it is skipped in combat (a macro can only test your OWN combat state)."] = true
+L["casts the unit's first missing assigned buff (Assignments tab)"] = true
 L["no macro named"] = true
 L["no saved macro named %s"] = true
+L["nothing is assigned to this unit right now"] = true
 L["the macro has no button yet (it is set up out of combat)"] = true
-L["too many combinations of conditions (a group multiplies them)"] = true
+L["unit is in combat"] = true
 L["unit's health is below"] = true
-L["%d rule(s) use this group: move or delete them first."] = true
-L["Start the macro's spells with [@mouseover] to act on the frame you click."] = true
 L["Test: your click runs the saved macro of the button %s on %s."] = true
 L["Move tooltip"] = true
 L["Done moving"] = true
