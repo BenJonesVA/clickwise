@@ -54,6 +54,14 @@
 -- shouts...) parses to nil on both sides and is skipped, same as an aura the player does not know at all.
 -- Auto-downgrade for low-level targets (casting a deliberately lower rank) is a different feature and is
 -- still not done.
+--
+-- REFUSED CASTS: the group data cannot know every buff that outranks another (a stronger attack power buff, talents,
+-- effects that share no group), and the game is the only judge. When a buff cast is refused with "A more powerful
+-- spell is already active", the group is remembered as skipped for that unit (bounced[guid][group]) and counts as
+-- provided by someone else, so the assignment walk moves on to the next entry and no expiry pulse is drawn for it.
+-- It lives OUTSIDE the per-scan state (Scan wipes that) and is applied inside Scan. It ends after BOUNCE_TTL
+-- seconds, once no aura of the group is left on the unit (the blocker is gone; only when one was there to begin
+-- with), or when the player casts a spell of that group on that unit again.
 
 local CW = Clickwise
 local Buffs = CW:NewModule("Buffs", "AceEvent-3.0", "AceTimer-3.0")
@@ -78,6 +86,8 @@ local TICK = 0.05       -- expiry driver: animation step
 local FLASH_SLOW, FLASH_FAST = 1.6, 0.25 -- seconds per pulse: when the warning starts / right before expiry
 local FLASH_MIN_ALPHA = 0.25             -- the dim end of a pulse, as a fraction of the icon's normal alpha
 local RESCAN_GAP = 0.5  -- an expired buff whose UNIT_AURA never came is re-read at most this often
+local BOUNCE_TTL = 300   -- seconds a "more powerful spell is already active" refusal keeps a group skipped on a unit
+local BOUNCE_TEXT = SPELL_FAILED_AURA_BOUNCED or "A more powerful spell is already active."
 
 Buffs.MINE, Buffs.OTHER = MINE, OTHER
 
@@ -126,6 +136,8 @@ local ruleLists = {} -- [target key] = ordered list of castable group keys (+ .s
 local hasRules = false
 local enabled, showSatisfied, warnSeconds = true, false, 0
 local dirty, flushScheduled = {}, false
+local bounced = {}       -- [unit GUID][group key] = {at = time refused, hadAura = a group aura was up then} (REFUSED CASTS)
+local lastSent = {}      -- the player's latest cast: spell, guid of its target, group key, time
 local watch = {}         -- [button] = true while it has a buff in (or about to enter) its expiry warning
 local NONE = {}
 
@@ -492,6 +504,10 @@ function Buffs:DumpUnit(unit)
 			i, name, tostring(caster), tostring(spellId), rank or "", groupOf[name] or "-")
 	end
 	if #lines == 1 then lines[2] = "No buffs on " .. unit .. "." end
+	for key, rec in pairs(bounced[UnitGUID(unit)] or NONE) do
+		lines[#lines + 1] = ("%s: the game refused a cast as 'more powerful spell already active' %d s ago, so it is skipped here"):format(
+			key, math.floor(GetTime() - rec.at))
+	end
 	-- how the rule's entries were sorted for the frame showing this unit
 	local set = UnitGUID(unit) and CW.UnitFrame.guidFrames[UnitGUID(unit)]
 	local btn = set and next(set)
@@ -642,10 +658,14 @@ function Buffs:Scan(btn)
 	end
 
 	local isSelf = UnitIsUnit(unit, "player")
+	local guid = UnitGUID(unit)
+	local bounce = guid and bounced[guid]
+	local present = bounce and {} or nil -- groups with any aura up, whoever cast it (only needed for `bounce`)
 	for i = 1, 40 do
 		local name, rank, _, _, _, duration, expires, caster = UnitAura(unit, i, "HELPFUL")
 		if not name then break end
 		local key = groupOf[name]
+		if present and key then present[key] = true end
 		local mine = type(caster) == "string" and UnitIsUnit(caster, "player")
 		-- a personal buff only counts on the player's own frame, and only when the player cast it
 		if key and scanKeys[key] and not (selfOnly[key] and not (isSelf and mine)) then
@@ -669,6 +689,20 @@ function Buffs:Scan(btn)
 				end
 			end
 		end
+	end
+
+	-- refused casts (see the REFUSED CASTS note): a group the game said is outranked counts as someone else's
+	if bounce then
+		local now = GetTime()
+		for key, rec in pairs(bounce) do
+			if now - rec.at > BOUNCE_TTL or (rec.hadAura and not present[key]) then
+				bounce[key] = nil
+			else
+				if rec.hadAura == nil then rec.hadAura = present[key] or false end
+				if scanKeys[key] then state[key] = OTHER end
+			end
+		end
+		if next(bounce) == nil then bounced[guid] = nil end
 	end
 
 	-- expiry warning (display only): which of the player's own buffs are inside the window, and when the
@@ -885,6 +919,41 @@ function Buffs:OnUnitAura(_, unit)
 	end
 end
 
+-- The GUID of the frame unit with this name (a cast's target arrives as a name), or nil.
+local function GuidByName(name)
+	for btn in pairs(CW.UnitFrame.frames) do
+		local unit = btn.unit
+		if unit and UnitName(unit) == name then return UnitGUID(unit) end
+	end
+end
+
+-- The player just started a cast. Remember what and on whom, in case the game refuses it (OnUIError), and forget an
+-- earlier refusal for that group on that unit: this cast is a fresh try and either lands or is refused again.
+function Buffs:OnCastSent(_, unit, spell, _, target)
+	if unit ~= "player" then return end
+	lastSent.spell, lastSent.key, lastSent.guid, lastSent.at = spell, groupOf[spell], nil, GetTime()
+	if not lastSent.key then return end
+	lastSent.guid = GuidByName((type(target) == "string" and target ~= "") and target or UnitName("player"))
+	local b = lastSent.guid and bounced[lastSent.guid]
+	if b and b[lastSent.key] then
+		b[lastSent.key] = nil
+		if next(b) == nil then bounced[lastSent.guid] = nil end
+	end
+end
+
+-- "A more powerful spell is already active." right after a buff cast: skip that group on that unit from now on.
+function Buffs:OnUIError(_, message)
+	if message ~= BOUNCE_TEXT or not (lastSent.key and lastSent.guid) or GetTime() - lastSent.at > 3 then return end
+	local guid = lastSent.guid
+	bounced[guid] = bounced[guid] or {}
+	bounced[guid][lastSent.key] = {at = GetTime()}
+	lastSent.key = nil
+	local set = CW.UnitFrame.guidFrames[guid]
+	if set then
+		for btn in pairs(set) do self:UpdateButton(btn, true) end
+	end
+end
+
 -- The expiry driver: a plain non-secure frame whose OnUpdate only runs while it is shown, i.e. while some
 -- button is in `watch`.
 function Buffs:CreateDriver()
@@ -909,6 +978,8 @@ function Buffs:OnEnable()
 	self:CreateDriver()
 	self:ResolveNames()
 	self:RegisterEvent("UNIT_AURA", "OnUnitAura")
+	self:RegisterEvent("UNIT_SPELLCAST_SENT", "OnCastSent")
+	self:RegisterEvent("UI_ERROR_MESSAGE", "OnUIError")
 	self:RegisterMessage("CLICKWISE_SETTINGS", "RefreshAll")
 	self:RegisterMessage("CLICKWISE_BUFFS_CHANGED", "RefreshAll")
 	self:RegisterMessage("CLICKWISE_SPELLS_CHANGED", function()
