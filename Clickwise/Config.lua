@@ -438,6 +438,7 @@ local function BuildLayout(page)
 	-- debuff highlight (Debuffs.lua)
 	Config.NewLabel(page, 8, -176, L["Debuffs"])
 	Config.NewCheck(page, 4, -198, L["Highlight debuffs"], {"debuffs", "enabled"})
+	Config.NewCheck(page, 176, -198, L["Important debuffs first"], {"debuffs", "important"})
 	Config.NewCheck(page, 4, -226, L["Only debuffs I can remove"], {"debuffs", "onlyMine"})
 	Config.NewCheck(page, 4, -254, L["Show the debuff icon"], {"debuffs", "icon"})
 

@@ -208,6 +208,8 @@ L["Debuffs"] = true
 L["Highlight debuffs"] = true
 L["Only debuffs I can remove"] = true
 L["Show the debuff icon"] = true
+L["Important debuffs first"] = true
+L["Important"] = true
 
 -- Cure debuff click
 L["Casts the spell that removes the worst debuff the unit has that you can remove (Cleanse, Remove Curse, Dispel Magic...). Only while you are out of combat: in combat, and when there is nothing to remove, the click does your other binding on the same click."] = true

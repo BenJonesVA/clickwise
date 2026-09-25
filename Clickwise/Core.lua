@@ -62,6 +62,8 @@ local defaults = {
 			enabled = true,
 			onlyMine = true, -- only debuffs the player can remove (else every typed debuff, the others darker)
 			icon = true,     -- also show the debuff's icon in the frame's top-right corner
+			important = true, -- named important debuffs (Debuffs.IMPORTANT + the player's own `watch` list) come first
+			watch = {},       -- the player's own important debuff names, highest priority first (/cw watch)
 		},
 		-- active defensives (Defensives.lua): the cooldowns that are up on a unit, in the middle of its frame
 		defensives = {
@@ -561,6 +563,11 @@ function CW:SlashCommand(input)
 		for _, line in ipairs(CW.Debuffs:DumpUnit(rest ~= "" and rest or "target")) do
 			self:Print(line)
 		end
+	elseif cmd == "watch" then
+		-- your own important debuff names: /cw watch | add <debuff> | remove <debuff>
+		for _, line in ipairs(CW.Debuffs:WatchCommand(rest)) do
+			self:Print(line)
+		end
 	elseif cmd == "defensives" then
 		-- debugging aid: the defensive cooldowns up on a unit, who cast them and the time left
 		if CW.Defensives then
@@ -648,6 +655,6 @@ function CW:SlashCommand(input)
 			self:Print("Settings window files were not loaded. Fully restart the game client (a /reload is not enough after files are added to the .toc).")
 		end
 	else
-		self:Print("/cw [config] | lock | unlock | reset | binds | bind <key> <spell> | unbind <key> | resetbinds | buffs [unit] | buffcheck | debuffs [unit] | defensives [unit] | smart [unit] | dispels | threat | profile [name] | test [5|10|25|40|off|combat]")
+		self:Print("/cw [config] | lock | unlock | reset | binds | bind <key> <spell> | unbind <key> | resetbinds | buffs [unit] | buffcheck | debuffs [unit] | watch [add|remove <debuff>] | defensives [unit] | smart [unit] | dispels | threat | profile [name] | test [5|10|25|40|off|combat]")
 	end
 end

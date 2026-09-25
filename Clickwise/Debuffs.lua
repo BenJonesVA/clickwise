@@ -8,7 +8,15 @@
 -- debuffs are shown as well, darker, so a curable one always stands out.
 --
 -- When a unit has several, the one shown is: curable before not curable, then Magic > Curse > Disease >
--- Poison. Only debuffs that carry a type count (a plain bleed or a stun has none and is ignored).
+-- Poison. Only debuffs that carry a type count (a plain bleed or a stun has none and is ignored), except the
+-- important ones named below.
+--
+-- IMPORTANT DEBUFFS (the "bouquet"): the type rule above ranks by dispel type, which knows nothing about WHICH debuff it is,
+-- so a Hunter's Mark (Magic) can outrank a boss mechanic, and a debuff with no type (a bleed, a bomb) is never seen at
+-- all. A debuff whose NAME is on the important list comes before everything else, typed or not, curable or not, and is
+-- drawn in its own color with its icon and stack count. The list is Debuffs.IMPORTANT (shipped data) after the player's own
+-- names (profile.debuffs.watch, edited with /cw watch), so the player's come first. Only the DISPLAY follows it: the smart
+-- cure click still picks by type (Choose's `typeOnly`), because an important debuff that cannot be removed has no cure.
 --
 -- Display only: textures under a non-secure child frame, so painting is legal in combat.
 --
@@ -59,6 +67,88 @@ Debuffs.COLORS = {
 }
 local PRIORITY = {Magic = 1, Curse = 2, Disease = 3, Poison = 4}
 local COLORS = Debuffs.COLORS
+local IMPORTANT_COLOR = {1, 0.3, 0.7} -- none of the four type colors, and not the threat ring's red / yellow
+Debuffs.IMPORTANT_COLOR = IMPORTANT_COLOR
+
+-- Encounter debuffs worth a glance, highest priority first (after the player's own list). enUS names, matched
+-- ignoring case and any rank. [belief] these names are from memory of the 3.3.5 raids, not read from the API: a
+-- wrong or missing one is harmless (it just never matches), and `/cw watch add <name>` adds what is missing.
+Debuffs.IMPORTANT = {
+	-- Icecrown Citadel
+	"Necrotic Plague", "Unbound Plague", "Mark of the Fallen Champion", "Frost Beacon", "Instability", "Unchained Magic",
+	"Impaled", "Gastric Bloat", "Vile Gas", "Mutated Infection", "Boiling Blood", "Rune of Blood",
+	-- Trial of the Crusader
+	"Legion Flame", "Incinerate Flesh", "Burning Bile", "Paralytic Toxin",
+	-- Ulduar, Naxxramas
+	"Light Bomb", "Gravity Bomb", "Living Bomb", "Mutating Injection", "Web Wrap",
+}
+
+local importantRank = {} -- [lowercased name] = position in the combined list (1 = highest priority)
+
+local function Normalize(name)
+	return type(name) == "string" and name:gsub("^%s+", ""):gsub("%s+$", ""):lower() or ""
+end
+
+-- The combined list is rebuilt whenever settings or the profile change (RefreshAll).
+function Debuffs:RebuildImportant()
+	importantRank = {}
+	local s = CW.db.profile.debuffs
+	if not s.important then return end
+	local n = 0
+	local function add(name)
+		local key = Normalize(name)
+		if key ~= "" and not importantRank[key] then
+			n = n + 1
+			importantRank[key] = n
+		end
+	end
+	for _, name in ipairs(s.watch or {}) do add(name) end
+	for _, name in ipairs(self.IMPORTANT) do add(name) end
+end
+
+-- Position of a debuff name in the important list, or nil.
+function Debuffs:ImportantRank(name)
+	return importantRank[Normalize(name)]
+end
+
+-- The player's own names, in order (a copy).
+function Debuffs:GetWatch()
+	local out = {}
+	for i, name in ipairs(CW.db.profile.debuffs.watch or {}) do out[i] = name end
+	return out
+end
+
+-- Put a name at the top of the player's own list (it moves there if it is already on it). Returns the stored
+-- name, or nil for an empty one.
+function Debuffs:AddWatch(name)
+	local key = Normalize(name)
+	if key == "" then return nil end
+	local s = CW.db.profile.debuffs
+	local list = {}
+	for _, old in ipairs(s.watch or {}) do
+		if Normalize(old) ~= key then list[#list + 1] = old end
+	end
+	local stored = name:gsub("^%s+", ""):gsub("%s+$", "")
+	table.insert(list, 1, stored)
+	s.watch = list
+	self:RefreshAll()
+	return stored
+end
+
+-- Take a name off the player's own list. Returns whether it was there.
+function Debuffs:RemoveWatch(name)
+	local key = Normalize(name)
+	local s = CW.db.profile.debuffs
+	local list, found = {}, false
+	for _, old in ipairs(s.watch or {}) do
+		if Normalize(old) == key then found = true else list[#list + 1] = old end
+	end
+	if found then
+		s.watch = list
+		self:RefreshAll()
+	end
+	return found
+end
 
 local canCure, cureSpell = {}, {} -- [type] = true / the spell that removes it, for the spells the player knows
 
@@ -88,6 +178,29 @@ function Debuffs:CureSummary()
 	return #can > 0 and table.concat(can, ", ") or nil
 end
 
+-- `/cw watch`, `/cw watch add <debuff>`, `/cw watch remove <debuff>`: the reply lines.
+function Debuffs:WatchCommand(rest)
+	local sub, name = (rest or ""):match("^(%S*)%s*(.-)%s*$")
+	sub = sub:lower()
+	if sub == "add" then
+		local stored = self:AddWatch(name)
+		if not stored then return {"Usage: /cw watch add <debuff name>"} end
+		return {("Watching %s: it now comes first on every frame, whatever its type."):format(stored)}
+	elseif sub == "remove" or sub == "del" or sub == "delete" then
+		if self:RemoveWatch(name) then return {("No longer watching %s."):format(name)} end
+		return {("%s is not on your own list (the built-in list is not editable)."):format(name)}
+	elseif sub ~= "" then
+		return {"Usage: /cw watch | /cw watch add <debuff name> | /cw watch remove <debuff name>"}
+	end
+	local mine = self:GetWatch()
+	local lines = {}
+	lines[1] = #mine > 0 and ("Your important debuffs, highest priority first: " .. table.concat(mine, ", "))
+		or "You have no important debuffs of your own yet: /cw watch add <debuff name> (see `/cw debuffs` for the exact names)."
+	lines[2] = ("Built in: %s."):format(table.concat(self.IMPORTANT, ", "))
+	if not CW.db.profile.debuffs.important then lines[3] = "Important debuffs are switched off (Layout tab: Important debuffs first)." end
+	return lines
+end
+
 -- Lines for `/cw dispels`: what the player can remove and which spells the client resolved.
 function Debuffs:Describe()
 	local lines = {}
@@ -110,9 +223,10 @@ function Debuffs:DumpUnit(unit)
 	for i = 1, 40 do
 		local name, _, _, count, debuffType = UnitAura(unit, i, "HARMFUL")
 		if not name then break end
-		lines[#lines + 1] = ("%d. %s  [type: %s, stacks: %s, you can remove it: %s]"):format(i, name,
+		local rank = importantRank[Normalize(name)]
+		lines[#lines + 1] = ("%d. %s  [type: %s, stacks: %s, you can remove it: %s%s]"):format(i, name,
 			debuffType and debuffType ~= "" and debuffType or "-", tostring(count),
-			(debuffType and canCure[debuffType]) and "yes" or "no")
+			(debuffType and canCure[debuffType]) and "yes" or "no", rank and (", important #" .. rank) or "")
 	end
 	if #lines == 0 then lines[1] = "No debuffs on " .. unit .. "." end
 	return lines
@@ -121,9 +235,18 @@ end
 --------------------------------------------------------------------------------
 -- Pure rule (asserted directly by the harness)
 --------------------------------------------------------------------------------
--- list = {{type =, curable =, ...}, ...}. The entry to show: curable before not curable, then by type
--- priority; nil when nothing qualifies (`onlyCurable` drops the ones the player cannot remove).
-function Debuffs.Choose(list, onlyCurable)
+-- list = {{type =, curable =, important =, ...}, ...}. The entry to show: an important one first (the lowest
+-- `important` position wins; it needs no type and ignores `onlyCurable`), else curable before not curable, then by
+-- type priority; nil when nothing qualifies (`onlyCurable` drops the ones the player cannot remove). `typeOnly` skips
+-- the important tier (the cure click: only a typed debuff has a cure).
+function Debuffs.Choose(list, onlyCurable, typeOnly)
+	if not typeOnly then
+		local top
+		for _, d in ipairs(list) do
+			if d.important and (not top or d.important < top.important) then top = d end
+		end
+		if top then return top end
+	end
 	local best
 	for _, d in ipairs(list) do
 		local rank = PRIORITY[d.type]
@@ -140,18 +263,21 @@ end
 -- The spell the smart cure click casts for a unit with these debuffs (a Collect result): the one that removes
 -- the most urgent debuff the player can remove, or nil. Deliberately independent of the display options.
 function Debuffs.CureFor(list)
-	local d = Debuffs.Choose(list, true)
+	local d = Debuffs.Choose(list, true, true)
 	return d and cureSpell[d.type] or nil
 end
 
--- Every typed harmful aura on the unit.
+-- Every typed harmful aura on the unit, and every important one (typed or not).
 function Debuffs:Collect(unit)
 	local list = {}
 	for i = 1, 40 do
 		local name, _, icon, count, debuffType = UnitAura(unit, i, "HARMFUL")
 		if not name then break end
-		if debuffType and PRIORITY[debuffType] then
-			list[#list + 1] = {name = name, icon = icon, count = count, type = debuffType, curable = canCure[debuffType] or false}
+		local typed = debuffType and PRIORITY[debuffType] and debuffType or nil
+		local important = importantRank[Normalize(name)]
+		if typed or important then
+			list[#list + 1] = {name = name, icon = icon, count = count, type = typed, curable = typed and canCure[typed] or false,
+				important = important}
 		end
 	end
 	return list
@@ -166,13 +292,16 @@ function Debuffs:TooltipLines(btn)
 	self:UpdateButton(btn) -- a fresh read: the hover can come before the coalesced aura update, and the border must agree
 	local list = self:Collect(unit)
 	table.sort(list, function(a, b)
+		if (a.important ~= nil) ~= (b.important ~= nil) then return a.important ~= nil end
+		if a.important then return a.important < b.important end
 		if a.curable ~= b.curable then return a.curable end
 		return PRIORITY[a.type] < PRIORITY[b.type]
 	end)
 	for _, d in ipairs(list) do
-		local c = COLORS[d.type]
-		local k = d.curable and 1 or DIM
+		local c = d.important and IMPORTANT_COLOR or COLORS[d.type]
+		local k = (d.curable or d.important) and 1 or DIM
 		local right = d.type
+		if d.important then right = d.type and (L["Important"] .. ", " .. d.type) or L["Important"] end
 		if d.curable then right = right .. " (" .. cureSpell[d.type] .. ")" end
 		local left = d.name
 		if type(d.count) == "number" and d.count > 1 then left = left .. " x" .. d.count end
@@ -214,7 +343,10 @@ function Debuffs:InitButton(btn)
 	icon:SetTexCoord(0.07, 0.93, 0.07, 0.93)
 	icon:SetPoint("TOPRIGHT", holder, "TOPRIGHT", -EDGE - 2, -EDGE - 2) -- the role icon has the top-left corner
 	icon:Hide()
-	btn.cwDebuffHolder, btn.cwDebuffEdges, btn.cwDebuffIcon = holder, edges, icon
+	local count = holder:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall") -- stacks of an important debuff
+	count:SetPoint("BOTTOMRIGHT", icon, "BOTTOMRIGHT", 1, 0)
+	count:Hide()
+	btn.cwDebuffHolder, btn.cwDebuffEdges, btn.cwDebuffIcon, btn.cwDebuffCount = holder, edges, icon, count
 	self:LayoutButton(btn)
 end
 
@@ -235,19 +367,27 @@ function Debuffs:Paint(btn)
 	if not d then
 		for i = 1, 4 do edges[i]:Hide() end
 		btn.cwDebuffIcon:Hide()
+		btn.cwDebuffCount:Hide()
 		return
 	end
-	local c = COLORS[d.type]
-	local k = d.curable and 1 or DIM
+	local c = d.important and IMPORTANT_COLOR or COLORS[d.type]
+	local k = (d.curable or d.important) and 1 or DIM
 	for i = 1, 4 do
 		CW.SetSolidColor(edges[i], c[1] * k, c[2] * k, c[3] * k, 1)
 		edges[i]:Show()
 	end
-	if CW:Look("debuffIcon") and d.icon then
+	-- an important debuff always shows its icon: without a type color, the icon is what says which one it is
+	if (d.important or CW:Look("debuffIcon")) and d.icon then
 		btn.cwDebuffIcon:SetTexture(d.icon)
 		btn.cwDebuffIcon:Show()
 	else
 		btn.cwDebuffIcon:Hide()
+	end
+	if d.important and type(d.count) == "number" and d.count > 1 and btn.cwDebuffIcon:IsShown() then
+		btn.cwDebuffCount:SetText(d.count)
+		btn.cwDebuffCount:Show()
+	else
+		btn.cwDebuffCount:Hide()
 	end
 end
 
@@ -270,6 +410,7 @@ function Debuffs:UpdateButton(btn)
 end
 
 function Debuffs:RefreshAll()
+	self:RebuildImportant()
 	for btn in pairs(CW.UnitFrame.frames) do
 		if btn.cwDebuffEdges then
 			self:LayoutButton(btn)
