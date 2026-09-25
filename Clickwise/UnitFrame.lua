@@ -405,7 +405,7 @@ function UnitFrame:LayoutButton(btn)
 
 	local nameSize = f.nameSize or f.fontSize
 	SetTextFont(btn.nameText, UnitFrame.FontPath(f.nameFont), nameSize)
-	btn.statusText:SetFont(STANDARD_TEXT_FONT, f.fontSize - 1, "OUTLINE")
+	SetTextFont(btn.statusText, UnitFrame.FontPath(f.nameFont), f.fontSize - 1)
 	btn.cwMaxNameChars = floor((width - 4) / (nameSize * 0.55))
 	CW.Buffs:LayoutButton(btn)
 	if CW.Debuffs then CW.Debuffs:LayoutButton(btn) end
