@@ -120,6 +120,16 @@ function Config.NewDropdown(page, x, y, width, items, get, set)
 	local initialised = false
 	-- the items table may change (a list of sets, the choices of a condition): after editing it, Invalidate() and Refresh()
 	function dd:Invalidate() initialised = false end
+	-- all UIDropDownMenuTemplate frames share ONE popup (DropDownList1...): whichever dropdown last built its menu owns
+	-- those buttons. UIDropDownMenu_SetSelectedValue reads its label back off that shared list, so with several dropdowns
+	-- refreshed in a row (as SyncForm on the Smart tab does) only the last one shows the right text. Look the label up in
+	-- our own `items` instead of trusting the shared list.
+	local function LabelFor(value)
+		for _, item in ipairs(items) do
+			if item.value == value then return item.label end
+		end
+		return ""
+	end
 	function dd:Refresh()
 		if not initialised then
 			initialised = true
@@ -131,14 +141,16 @@ function Config.NewDropdown(page, x, y, width, items, get, set)
 					info.checked = (get() == item.value)
 					info.func = function()
 						set(item.value)
-						UIDropDownMenu_SetSelectedValue(dd, item.value)
+						dd:Refresh()
 					end
 					UIDropDownMenu_AddButton(info)
 				end
 			end)
 			UIDropDownMenu_SetWidth(dd, width)
 		end
-		UIDropDownMenu_SetSelectedValue(dd, get())
+		local value = get()
+		dd.selectedValue = value
+		UIDropDownMenu_SetText(dd, LabelFor(value))
 	end
 	page.controls[#page.controls + 1] = dd
 	return dd
