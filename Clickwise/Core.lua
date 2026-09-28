@@ -93,6 +93,7 @@ local defaults = {
 		-- bindings[CLASS] = user-defined list; a missing class entry = use the class template
 		-- from Templates.lua. Keyed by class because profiles are shared between characters.
 		bindings = {},
+		threatOrder = {},   -- per class: the threat response click's skills in the player's order, {{spell =, on =}, ...} (ClickCast.lua)
 		-- Buff tracking (Buffs.lua). classes[CLASS][GROUP] = {enabled = bool|nil, order = {spell names}|nil};
 		-- an absent entry means "defaults from BuffData.lua". Keyed by class like bindings.
 		buffs = {

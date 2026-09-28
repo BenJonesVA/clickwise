@@ -36,6 +36,7 @@ local KIND_ITEMS = {
 	{value = "cure", label = L["Cure debuff"]},
 	{value = "rez", label = L["Resurrect"]},
 	{value = "taunt", label = L["Taunt"]},
+	{value = "threat", label = L["Threat response"]},
 	{value = "macro", label = L["Macro"]},
 	{value = "target", label = L["Target unit"]},
 	{value = "focus", label = L["Set focus"]},
@@ -85,6 +86,9 @@ local function ActionText(b)
 	elseif b.type == "taunt" then
 		local spell = CW.ClickCast:TauntSpell()
 		return L["Taunt"] .. (spell and (": " .. spell) or "")
+	elseif b.type == "threat" then
+		local first = CW.ClickCast:ThreatSkills()[1]
+		return L["Threat response"] .. (first and (": " .. first.name) or "")
 	elseif b.type == "smart" then
 		return L["Smart"] .. ": " .. tostring(b.set)
 	end
@@ -442,6 +446,52 @@ local function Build(page)
 		"GameFontHighlightSmall")
 	tauntSection[#tauntSection]:SetWidth(290)
 
+	-- threat response section: the class's skills in order, a box each and Up / Down. It edits the class's order at
+	-- once (not with Save): every threat response click of the class shares it.
+	local THREAT_ROWS = 4
+	local threatSection, threatRows = {}, {}
+	threatSection[#threatSection + 1] = Config.NewLabel(page, FORM_X, -112,
+		L["Casts the first threat skill in this list that is ready, aimed at the enemy this member is targeting (Righteous Defense goes on the member). When one is on cooldown the next is tried. Tick a skill to use it; the order is kept for your class."],
+		"GameFontHighlightSmall")
+	threatSection[#threatSection]:SetWidth(290)
+	local function RefreshThreat()
+		local list = ClickCast:ThreatList()
+		for i, row in ipairs(threatRows) do
+			local skill = list[i]
+			if skill and S.kind == "threat" then
+				row.check:SetChecked(skill.on)
+				row.text:SetText(skill.spell .. (skill.name and "" or " " .. L["(not known)"]))
+				if i == 1 then row.up:Disable() else row.up:Enable() end
+				if i == #list then row.down:Disable() else row.down:Enable() end
+				row.check:Show(); row.up:Show(); row.down:Show()
+			else
+				row.check:Hide(); row.up:Hide(); row.down:Hide()
+			end
+		end
+	end
+	for i = 1, THREAT_ROWS do
+		local y = -178 - (i - 1) * 26
+		local row = {}
+		row.check = MakeCheck(FORM_X, y, "", function(v)
+			ClickCast:SetThreatOn(i, v)
+			RefreshThreat()
+			UpdateStatus()
+		end)
+		row.text = _G[row.check:GetName() .. "Text"]
+		row.check:SetHitRectInsets(0, -170, 0, 0)
+		row.up = Config.NewButton(page, FORM_X + 196, y + 2, 40, L["Up"], function()
+			ClickCast:MoveThreat(i, -1)
+			RefreshThreat()
+			UpdateStatus()
+		end)
+		row.down = Config.NewButton(page, FORM_X + 240, y + 2, 50, L["Down"], function()
+			ClickCast:MoveThreat(i, 1)
+			RefreshThreat()
+			UpdateStatus()
+		end)
+		threatRows[i] = row
+	end
+
 	-- assigned buff section ------------------------------------------------------
 	local assignedSection = {}
 	assignedSection[#assignedSection + 1] = Config.NewLabel(page, FORM_X, -112,
@@ -484,6 +534,8 @@ local function Build(page)
 		ShowSection(cureSection, S.kind == "cure")
 		ShowSection(rezSection, S.kind == "rez")
 		ShowSection(tauntSection, S.kind == "taunt")
+		ShowSection(threatSection, S.kind == "threat")
+		RefreshThreat()
 		ShowSection(smartSection, S.kind == "smart")
 		if S.kind == "smart" then
 			FillSmartItems()
@@ -592,6 +644,14 @@ local function Build(page)
 				lines[#lines + 1] = (L["Casts: %s"]):format(spell)
 			else
 				lines[#lines + 1] = "|cffffcc00" .. L["You know no taunt spell - this does nothing until you do."] .. "|r"
+			end
+		elseif S.kind == "threat" then
+			local names = {}
+			for _, skill in ipairs(ClickCast:ThreatSkills()) do names[#names + 1] = skill.name end
+			if #names > 0 then
+				lines[#lines + 1] = (L["Casts, in this order: %s"]):format(table.concat(names, " > "))
+			else
+				lines[#lines + 1] = "|cffffcc00" .. L["You know no threat skill that is switched on - this does nothing until you do."] .. "|r"
 			end
 		elseif S.kind == "smart" then
 			if not (S.smartSet and CW.Smart and CW.Smart:GetSet(S.smartSet)) then

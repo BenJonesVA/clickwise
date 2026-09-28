@@ -22,6 +22,13 @@
 -- have, so the macro aims at the member's target: "/cast [target=<unit>target,harm,nodead] <taunt>". Unlike the
 -- smart clicks it works in combat (that is when a tank taunts) and it takes the click over like an ordinary
 -- binding. The macro names the unit token, so it is rewritten (out of combat) when the button's unit changes.
+-- type "threat" is the taunt click with a fall-through: the class's threat skills in the player's order (THREAT below, the
+-- order is profile.threatOrder). One click writes one `/cast` line per skill, in that order, and a macro runs every line: a
+-- skill on cooldown fails and the next line casts. The addon cannot pick by cooldown itself, attributes are frozen in
+-- combat, so the macro does the picking [belief: a failed /cast line lets the next one run; untested in game]. A skill
+-- aims at the enemy the member is targeting ("enemy"), at the member ("member", Righteous Defense) or at nothing ("self",
+-- Challenging Shout). Beside a cure / rez click (which is out of combat only) the threat lines carry [combat], or a cure
+-- and a taunt would both fire.
 -- type "smart" runs a named rule set (Smart.lua): an ordered list of IF conditions THEN action rules, first match wins,
 -- with an optional "otherwise". It compiles per unit frame into clauses of the click's one `/cast` line, so it needs the macro
 -- path and is rewritten (out of combat) whenever what it froze changes: the frame's signature carries the compiled result.
@@ -289,7 +296,7 @@ end
 local BUTTON_ORDER = {"1", "2", "3", "4", "5"}
 local BUTTON_TIP = {["1"] = L["Left"], ["2"] = L["Right"], ["3"] = L["Middle"], ["4"] = L["Button 4"], ["5"] = L["Button 5"]}
 local DEFAULT_CLICK = {["1"] = L["Target"], ["2"] = L["Menu"]} -- the "*type1" / "*type2" wildcard defaults of templates.xml
-local KIND_TEXT = {target = L["Target"], focus = L["Focus"], assist = L["Assist"], macro = L["Macro"], cure = L["Cure debuff"], rez = L["Resurrect"], taunt = L["Taunt"], smart = L["Smart"]}
+local KIND_TEXT = {target = L["Target"], focus = L["Focus"], assist = L["Assist"], macro = L["Macro"], cure = L["Cure debuff"], rez = L["Resurrect"], taunt = L["Taunt"], threat = L["Threat response"], smart = L["Smart"]}
 
 -- Lines for the hover tooltip: what each click does with this modifier prefix ("" or "alt-ctrl-shift-") held.
 -- Each line is {left = button, right = action, r, g, b}. Second result: whether bindings on other modifier
@@ -317,6 +324,10 @@ function ClickCast:TooltipLines(btn, modifier)
 				local what = CastName(b, btn)
 				if b.type == "smart" then
 					what = KIND_TEXT.smart .. ": " .. tostring(b.set)
+				elseif b.type == "threat" then
+					local names = {}
+					for _, skill in ipairs(self:ThreatSkills()) do names[#names + 1] = skill.name end
+					what = KIND_TEXT.threat .. (#names > 0 and (": " .. table.concat(names, " > ")) or "")
 				elseif SMART[b.type] or b.type == "taunt" then
 					what = KIND_TEXT[b.type] .. (what and (": " .. what) or "")
 				elseif not what then
@@ -341,7 +352,7 @@ end
 -- Whether any binding of the list needs the macro path: a casting binding that is gated, an assigned one, a smart click or a rule set.
 local function NeedsMacro(items)
 	for _, b in ipairs(items) do
-		if b.type == "assigned" or b.type == "taunt" or b.type == "smart" or SMART[b.type] or (CASTS[b.type] and WhenOf(b) ~= "ANY") then return true end
+		if b.type == "assigned" or b.type == "taunt" or b.type == "threat" or b.type == "smart" or SMART[b.type] or (CASTS[b.type] and WhenOf(b) ~= "ANY") then return true end
 	end
 	return false
 end
@@ -353,6 +364,30 @@ local function TauntTarget(unit)
 end
 ClickCast.TauntTarget = TauntTarget -- (Smart.lua aims a rule set's taunt the same way)
 
+-- The lines of a threat response click, one `/cast` per skill in the player's order. `guard`: a cure / rez clause shares the
+-- macro (it is out of combat only), so these lines wait for combat to keep the two from both firing. The macro is 255
+-- characters at most: a skill that no longer fits is left out.
+local function ThreatLines(btn, guard)
+	local unit, lines, size = btn.unit, {}, 0
+	if not unit then return lines end
+	for _, skill in ipairs(ClickCast:ThreatSkills()) do
+		local conds = {}
+		if guard then conds[#conds + 1] = "combat" end
+		if skill.aim == "enemy" then
+			conds[#conds + 1] = "target=" .. TauntTarget(unit)
+			conds[#conds + 1] = "harm"
+			conds[#conds + 1] = "nodead"
+		elseif skill.aim == "member" then
+			conds[#conds + 1] = "target=" .. unit
+		end
+		local line = "/cast " .. (#conds > 0 and ("[" .. table.concat(conds, ",") .. "] ") or "") .. skill.name
+		if size + #line + 1 > 255 then break end
+		size = size + #line + 1
+		lines[#lines + 1] = line
+	end
+	return lines
+end
+
 -- The macro for one click that carries gated / assigned bindings (see the header comment), or nil when
 -- nothing applies to this button right now.
 local function BuildClickMacro(btn, items, button)
@@ -360,11 +395,14 @@ local function BuildClickMacro(btn, items, button)
 	local gated, open = {}, {}
 	local smart = {}
 	local sets = {} -- the rule sets on this click (Smart.lua)
+	local threat = false -- a threat response click: its lines follow the /cast line
 	local rest -- what follows the first /cast line once a rule set runs a macro: {click = true, text} / {clauses = {...}} segments (Smart.lua)
 	for _, b in ipairs(items) do
 		local spell, unit = CastName(b, btn), b.unit or btn.unit
 		if b.type == "smart" then
 			sets[#sets + 1] = b.set
+		elseif b.type == "threat" then
+			threat = true
 		elseif SMART[b.type] then
 			-- first in the macro, and only while the player is out of combat (see the header comment)
 			if spell and unit then smart[#smart + 1] = ("[nocombat,target=%s] %s"):format(unit, spell) end
@@ -416,17 +454,19 @@ local function BuildClickMacro(btn, items, button)
 	else
 		for i = #smart, 1, -1 do table.insert(gated, 1, smart[i]) end
 	end
-	if #gated == 0 and not rest then return nil end
+	local threatLines = threat and ThreatLines(btn, #gated > 0) or {}
+	if #gated == 0 and not rest and #threatLines == 0 then return nil end
 	local lines = {}
 	if #gated > 0 then lines[1] = "/cast " .. table.concat(gated, "; ") end
 	if rest then
 		for _, line in ipairs(CW.Smart.RestLines(rest, CW.Smart.PrevBrackets(gated))) do lines[#lines + 1] = line end
 	end
+	for _, line in ipairs(threatLines) do lines[#lines + 1] = line end
 	local text = table.concat(lines, "\n")
 	-- a left click that only has smart clauses keeps targeting the unit once combat starts (the macro replaced
 	-- the default target click); other buttons have nothing to fall back to and the editor says so
 	-- [belief] `/target [combat] <unit>` is understood by a secure macro; if not, the line is a harmless no-op
-	if #smart > 0 and #smart == #gated and not rest and button == "1" and btn.unit then
+	if #smart > 0 and #smart == #gated and not rest and #threatLines == 0 and button == "1" and btn.unit then
 		text = text .. "\n/target [combat] " .. btn.unit
 	end
 	return text
@@ -517,7 +557,7 @@ end
 -- Does any binding's attribute depend on live state (unit, unit combat, assigned pick, cure / rez pick, a rule set)?
 function ClickCast:IsDynamic()
 	for _, b in ipairs(self:GetBindings()) do
-		if b.type == "assigned" or b.type == "taunt" or b.type == "smart" or SMART[b.type] or (CASTS[b.type] and WhenOf(b) ~= "ANY") then return true end
+		if b.type == "assigned" or b.type == "taunt" or b.type == "threat" or b.type == "smart" or SMART[b.type] or (CASTS[b.type] and WhenOf(b) ~= "ANY") then return true end
 	end
 	return false
 end
@@ -547,6 +587,98 @@ end
 
 function ClickCast:TauntSpell()
 	return tauntSpell
+end
+
+-- The threat skills a class can put in a threat response click: {English name, spell id, aim, on by default}.
+-- aim: "enemy" = the enemy the clicked member is targeting, "member" = the member, "self" = no target. The ones that cost a
+-- long cooldown (Challenging Shout / Roar) or are no taunt (Hand of Salvation lowers threat) start switched off.
+-- [belief] the ids and names, from game knowledge; the English name is tried first, then whatever the id resolves to.
+local THREAT = {
+	PALADIN = {
+		{"Hand of Reckoning", 62124, "enemy", true},
+		{"Righteous Defense", 31789, "member", true},
+		{"Hand of Salvation", 1038, "member", false},
+	},
+	WARRIOR = {
+		{"Taunt", 355, "enemy", true},
+		{"Mocking Blow", 694, "enemy", true},
+		{"Challenging Shout", 1161, "self", false},
+	},
+	DEATHKNIGHT = {
+		{"Dark Command", 56222, "enemy", true},
+		{"Death Grip", 49576, "enemy", true},
+	},
+	DRUID = {
+		{"Growl", 6795, "enemy", true},
+		{"Challenging Roar", 5209, "self", false},
+	},
+}
+ClickCast.THREAT = THREAT
+
+-- The class's whole threat list in the player's order: {spell = English name, name = the spell to cast (nil while the
+-- player does not know it), aim, on}. The saved order (profile.threatOrder[class] = {{spell, on}, ...}) wins; a skill it
+-- does not mention comes after, with its default; a name it mentions that is no longer a candidate is dropped.
+function ClickCast:ThreatList()
+	local class = ClassKey()
+	local candidates, byName, out, seen = THREAT[class], {}, {}, {}
+	if not candidates then return out end
+	for _, c in ipairs(candidates) do byName[c[1]] = c end
+	local function add(c, on)
+		seen[c[1]] = true
+		local name
+		for _, try in ipairs({c[1], (GetSpellInfo(c[2]))}) do
+			if try and CW.KnowsSpell(try) then name = try break end
+		end
+		out[#out + 1] = {spell = c[1], name = name, aim = c[3], on = on}
+	end
+	local saved = CW.db.profile.threatOrder and CW.db.profile.threatOrder[class]
+	for _, entry in ipairs(saved or {}) do
+		local c = byName[entry.spell]
+		if c and not seen[c[1]] then add(c, entry.on and true or false) end
+	end
+	for _, c in ipairs(candidates) do
+		if not seen[c[1]] then add(c, c[4]) end
+	end
+	return out
+end
+
+-- The skills a threat response click casts now: switched on and known, in order.
+function ClickCast:ThreatSkills()
+	local out = {}
+	for _, skill in ipairs(self:ThreatList()) do
+		if skill.on and skill.name then out[#out + 1] = skill end
+	end
+	return out
+end
+
+local function StoreThreat(list)
+	local saved = {}
+	for i, skill in ipairs(list) do saved[i] = {spell = skill.spell, on = skill.on} end
+	local all = CW.db.profile.threatOrder
+	if not all then
+		all = {}
+		CW.db.profile.threatOrder = all
+	end
+	all[ClassKey()] = saved
+	ClickCast:ApplyAll()
+end
+
+-- Move the skill at `index` of ThreatList() up (delta -1) or down (+1); false at either end.
+function ClickCast:MoveThreat(index, delta)
+	local list = self:ThreatList()
+	local other = index + delta
+	if not list[index] or not list[other] then return false end
+	list[index], list[other] = list[other], list[index]
+	StoreThreat(list)
+	return true
+end
+
+function ClickCast:SetThreatOn(index, on)
+	local list = self:ThreatList()
+	if not list[index] then return false end
+	list[index].on = on and true or false
+	StoreThreat(list)
+	return true
 end
 
 -- The class resurrection: {spell id, English name}. Not Rebirth (combat only, and the smart clicks are out of

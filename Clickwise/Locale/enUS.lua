@@ -274,6 +274,15 @@ L["Deleted profile %s."] = true
 L["Taunt"] = true
 L["Taunts the enemy this member is targeting, with your class's taunt (Taunt, Hand of Reckoning, Dark Command or Growl). Works in combat. A member with no enemy targeted: nothing happens."] = true
 L["You know no taunt spell - this does nothing until you do."] = true
+
+-- Threat response click
+L["Threat response"] = true
+L["Casts the first threat skill in this list that is ready, aimed at the enemy this member is targeting (Righteous Defense goes on the member). When one is on cooldown the next is tried. Tick a skill to use it; the order is kept for your class."] = true
+L["Up"] = true
+L["Down"] = true
+L["Casts, in this order: %s"] = true
+L["You know no threat skill that is switched on - this does nothing until you do."] = true
+L["(not known)"] = true
 L["Test: your click casts %s on what %s is targeting."] = true
 
 -- Threat (Threat.lua)
