@@ -352,7 +352,7 @@ end
 -- Whether any binding of the list needs the macro path: a casting binding that is gated, an assigned one, a smart click or a rule set.
 local function NeedsMacro(items)
 	for _, b in ipairs(items) do
-		if b.type == "assigned" or b.type == "taunt" or b.type == "threat" or b.type == "smart" or SMART[b.type] or (CASTS[b.type] and WhenOf(b) ~= "ANY") then return true end
+		if b.type == "assigned" or (b.type == "buff" and CW.Buffs:IsPersonal(b.group)) or b.type == "taunt" or b.type == "threat" or b.type == "smart" or SMART[b.type] or (CASTS[b.type] and WhenOf(b) ~= "ANY") then return true end
 	end
 	return false
 end
@@ -477,6 +477,7 @@ end
 local function Signature(btn)
 	return (btn.unit or "") .. "|" .. (btn.cwUnitCombat and "1" or "0") .. "|" .. (btn.cwAssignedSpell or "")
 		.. "|" .. (btn.cwCureSpell or "") .. "|" .. (btn.cwRezSpell or "") .. "|" .. (btn.cwSmartSig or "")
+		.. "|" .. (CW.Buffs and CW.Buffs.pickSig or "")
 end
 
 -- A binding that does not depend on live state: plain secure attributes that follow the button's own unit.

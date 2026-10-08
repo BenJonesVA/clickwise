@@ -1,5 +1,5 @@
 -- Active defensives: the icons of the defensive cooldowns that are UP on a unit right now (Shield Wall, Guardian
--- Spirit, Pain Suppression...), drawn in the middle of the unit's frame with the seconds left on each. The point is to
+-- Spirit, Pain Suppression...), drawn small along the bottom edge, centred between the buff icons (bottom-left) and the health text (bottom-right), with the seconds left on each. They used to sit in the middle and covered the unit's name. The point is to
 -- see at a glance that a tank is already covered, so a second external is not wasted on top of the first.
 --
 -- It is about active auras only. What another player's cooldown is doing while it is NOT running (ready or not) cannot
@@ -36,7 +36,7 @@ local FLUSH_DELAY = 0.2  -- UNIT_AURA is spammy in raids; coalesce per GUID (as 
 local TICK = 0.25        -- seconds between the countdown updates
 local RESCAN_GAP = 1     -- an icon whose time ran out asks for a fresh read at most this often (the safety net)
 local MAX_SHOWN = 2      -- icons on a frame
-local GAP = 3            -- between two icons
+local GAP = 2            -- between two icons
 local BORDER = 1         -- thickness of an icon's coloured border
 local EXTERNAL = {1, 0.82, 0.1}
 local OWN = {0.7, 0.7, 0.7}
@@ -164,7 +164,7 @@ function Defensives:InitButton(btn)
 		text:Hide()
 		slots[i] = {border = border, icon = icon, text = text}
 	end
-	btn.cwDefHolder, btn.cwDefSlots, btn.cwDefSize = holder, slots, 16
+	btn.cwDefHolder, btn.cwDefSlots, btn.cwDefSize = holder, slots, 12
 	self:LayoutButton(btn)
 end
 
@@ -172,14 +172,14 @@ end
 function Defensives:LayoutButton(btn)
 	local slots = btn.cwDefSlots
 	if not slots then return end
-	local size = max(14, min(26, floor(CW:Look("height") * 0.7)))
+	local size = max(10, min(14, floor(CW:Look("height") * 0.36)))
 	btn.cwDefSize = size
 	for _, s in ipairs(slots) do
 		s.icon:SetSize(size, size)
 		s.border:SetSize(size + 2 * BORDER, size + 2 * BORDER)
 		s.border:ClearAllPoints()
 		s.border:SetPoint("CENTER", s.icon, "CENTER", 0, 0)
-		s.text:SetFont(STANDARD_TEXT_FONT, max(8, min(12, floor(size * 0.5))), "OUTLINE")
+		s.text:SetFont(STANDARD_TEXT_FONT, 8, "OUTLINE")
 		s.text:ClearAllPoints()
 		s.text:SetPoint("CENTER", s.icon, "CENTER", 0, 0)
 	end
@@ -206,7 +206,7 @@ function Defensives:Paint(btn)
 		local d = i <= n and list[i]
 		if d then
 			s.icon:ClearAllPoints()
-			s.icon:SetPoint("CENTER", btn.cwDefHolder, "CENTER", (i - (n + 1) / 2) * (size + GAP), 0)
+			s.icon:SetPoint("BOTTOM", btn.cwDefHolder, "BOTTOM", (i - (n + 1) / 2) * (size + GAP), 3 + BORDER)
 			s.icon:SetTexture(d.icon)
 			local c = d.external and EXTERNAL or OWN
 			CW.SetSolidColor(s.border, c[1], c[2], c[3], 1)

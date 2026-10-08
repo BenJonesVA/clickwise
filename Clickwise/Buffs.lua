@@ -76,7 +76,7 @@ local UnitIsConnected, UnitIsDeadOrGhost = API.UnitIsConnected, API.UnitIsDeadOr
 local UnitClass, UnitName, UnitExists, UnitAffectingCombat = API.UnitClass, API.UnitName, API.UnitExists, API.UnitAffectingCombat
 local GetSpellInfo, GetTime = GetSpellInfo, GetTime
 local InCombatLockdown = InCombatLockdown
-local cos, pi = math.cos, math.pi
+local cos, pi, ceil = math.cos, math.pi, math.ceil
 
 local MINE, OTHER = 1, 2
 local MAX_ICONS = 4
@@ -128,6 +128,9 @@ for _, group in ipairs(CW.BuffGroups) do groupByKey[group.key] = group end
 local groupOf = {}   -- [aura name] = group key
 local slotOf = {}    -- [spell / aura name] = exclusive slot (see BuffData.lua)
 local selfOnly = {}  -- [group key] = true for a personal buff (see BuffData.lua)
+local blocked = {}   -- [selfOnly group key] = {[spell name] = true}: spells whose aura SOMEONE ELSE already has on the player (see FALLBACK)
+local ownKeys = {}   -- ordered keys of the enabled ownOnly groups the player can cast: shown wherever they are up (Paint)
+local ownOnly = {}   -- [group key] = true for a one-target buff only the player's own cast counts for (Beacon of Light)
 local tracked = {}   -- ordered list of {key, label, icon, spell, slot} for groups being shown
 local trackedKeys = {}
 local scanKeys = {}  -- groups whose aura state is read: the tracked ones plus every group named in a rule
@@ -216,6 +219,12 @@ function Buffs:IsAvailable(key)
 	return false
 end
 
+-- A personal group (seals, auras...): castable only on the player, and subject to the FALLBACK pick.
+function Buffs:IsPersonal(key)
+	local group = groupByKey[key]
+	return group ~= nil and group.selfOnly == true
+end
+
 function Buffs:IsGroupEnabled(key)
 	local g = GroupDB(key)
 	if g and g.enabled ~= nil then
@@ -269,10 +278,45 @@ function Buffs:SpellGroup(name)
 end
 
 -- Highest-priority spell of the group that the player knows, or nil.
+-- FALLBACK: for a personal group (paladin auras) a spell whose aura another player already has on you is skipped,
+-- so Devotion > Concentration > Retribution casts Concentration while another paladin's Devotion Aura is on you.
+-- When every known spell is taken the first one is still the answer.
 function Buffs:GetCastSpell(key)
+	local first, taken = nil, blocked[key]
 	for _, name in ipairs(self:GetOrder(key)) do
-		if CW.KnowsSpell(name) then return name end
+		if CW.KnowsSpell(name) then
+			if not (taken and taken[name]) then return name end
+			first = first or name
+		end
 	end
+	return first
+end
+
+-- Called by Scan on the player's own frame with the group auras other players have on the player. Re-picks the spell
+-- of each personal group and, when a pick changed, tells ClickCast through pickSig (part of a button's signature).
+function Buffs:SetBlocked(others)
+	local sig = {}
+	for _, group in ipairs(CW.BuffGroups) do
+		local key = group.key
+		if group.selfOnly then
+			local set
+			for _, s in ipairs(group.spells) do
+				if others[s.name] then set = set or {}; set[s.name] = true end
+			end
+			blocked[key] = set
+			local entry = info[key]
+			if entry then
+				local spell = self:GetCastSpell(key)
+				if spell ~= entry.spell then
+					entry.spell = spell
+					local _, _, icon = GetSpellInfo(spell)
+					entry.icon = icon or QUESTION_MARK
+				end
+				if set then sig[#sig + 1] = key .. "=" .. tostring(spell) end
+			end
+		end
+	end
+	self.pickSig = table.concat(sig, ",")
 end
 
 -- Swap `name` with the next known spell up (delta = -1) or down (delta = 1).
@@ -528,9 +572,12 @@ function Buffs:Rebuild()
 	enabled, showSatisfied = opts.enabled, opts.showSatisfied
 	warnSeconds = tonumber(opts.expireWarn) or 0
 
-	groupOf, slotOf, selfOnly, tracked, trackedKeys, scanKeys, info, ruleLists = {}, {}, {}, {}, {}, {}, {}, {}
+	groupOf, slotOf, selfOnly, ownOnly, tracked, trackedKeys, scanKeys, info, ruleLists = {}, {}, {}, {}, {}, {}, {}, {}, {}
+	ownKeys = {}
+	blocked, Buffs.pickSig = {}, ""
 	for _, group in ipairs(CW.BuffGroups) do
 		selfOnly[group.key] = group.selfOnly and true or nil
+		ownOnly[group.key] = group.ownOnly and true or nil
 		for _, s in ipairs(group.spells) do
 			groupOf[s.name] = group.key
 			slotOf[s.name] = s.slot
@@ -539,9 +586,13 @@ function Buffs:Rebuild()
 			local spell = self:GetCastSpell(group.key)
 			local _, _, icon = GetSpellInfo(spell)
 			local entry = {key = group.key, label = group.label, icon = icon or QUESTION_MARK, spell = spell,
-				slot = slotOf[spell], selfOnly = group.selfOnly, toggle = group.toggle}
+				slot = slotOf[spell], selfOnly = group.selfOnly, ownOnly = group.ownOnly, toggle = group.toggle}
 			info[group.key] = entry
-			if enabled and self:IsGroupEnabled(group.key) then
+			-- an ownOnly buff is shown only where a rule names it, never on every frame
+			if enabled and group.ownOnly and self:IsGroupEnabled(group.key) then
+				ownKeys[#ownKeys + 1] = group.key
+				scanKeys[group.key] = true
+			elseif enabled and self:IsGroupEnabled(group.key) then
 				tracked[#tracked + 1] = entry
 				trackedKeys[group.key] = true
 				scanKeys[group.key] = true
@@ -612,6 +663,16 @@ function Buffs:InitButton(btn)
 		tex:Hide()
 		icons[i] = tex
 	end
+	-- the seconds left, drawn on an icon that is a pulsing expiry warning
+	local texts = {}
+	for i = 1, MAX_ICONS do
+		local text = holder:CreateFontString(nil, "OVERLAY")
+		text:SetFont(STANDARD_TEXT_FONT, 8, "OUTLINE")
+		text:SetPoint("CENTER", icons[i], "CENTER", 0, 0)
+		text:Hide()
+		texts[i] = text
+	end
+	btn.cwBuffTexts = texts
 	btn.cwBuffHolder, btn.cwBuffIcons, btn.cwBuffState, btn.cwBuffSlots = holder, icons, {}, {}
 	btn.cwExpire, btn.cwExpiring = {}, {} -- [group] = expiration time (false = a permanent aura) / in-warning subset
 	self:LayoutButton(btn)
@@ -660,6 +721,7 @@ function Buffs:Scan(btn)
 	local isSelf = UnitIsUnit(unit, "player")
 	local guid = UnitGUID(unit)
 	local bounce = guid and bounced[guid]
+	local others = isSelf and {} or nil -- the personal-group auras other players have on the player (FALLBACK)
 	local present = bounce and {} or nil -- groups with any aura up, whoever cast it (only needed for `bounce`)
 	for i = 1, 40 do
 		local name, rank, _, _, _, duration, expires, caster = UnitAura(unit, i, "HELPFUL")
@@ -667,8 +729,10 @@ function Buffs:Scan(btn)
 		local key = groupOf[name]
 		if present and key then present[key] = true end
 		local mine = type(caster) == "string" and UnitIsUnit(caster, "player")
-		-- a personal buff only counts on the player's own frame, and only when the player cast it
-		if key and scanKeys[key] and not (selfOnly[key] and not (isSelf and mine)) then
+		if others and key and selfOnly[key] and not mine then others[name] = true end
+		-- a personal buff only counts on the player's own frame, and only when the player cast it; a one-target
+		-- buff (Beacon of Light) counts anywhere, but only when the player cast it
+		if key and scanKeys[key] and not (selfOnly[key] and not (isSelf and mine)) and not (ownOnly[key] and not mine) then
 			if mine then
 				state[key] = MINE
 				if slotOf[name] then slots[slotOf[name]] = key end -- the player's own slot spell is up
@@ -690,6 +754,8 @@ function Buffs:Scan(btn)
 			end
 		end
 	end
+
+	if others then self:SetBlocked(others) end
 
 	-- refused casts (see the REFUSED CASTS note): a group the game said is outranked counts as someone else's
 	if bounce then
@@ -750,7 +816,10 @@ function Buffs:Paint(btn)
 	local icons = btn.cwBuffIcons
 	if not icons then return end
 	local shown = 0
-	for i = 1, MAX_ICONS do icons[i].cwExpires = nil end
+	for i = 1, MAX_ICONS do
+		icons[i].cwExpires = nil
+		btn.cwBuffTexts[i]:Hide()
+	end
 
 	-- expires: the aura's expiration time when the icon is a pulsing expiry warning, else nil
 	local function show(group, alpha, grey, expires)
@@ -763,6 +832,10 @@ function Buffs:Paint(btn)
 		if grey then tex:SetVertexColor(0.6, 0.6, 0.6) else tex:SetVertexColor(1, 1, 1) end
 		tex.cwBase, tex.cwExpires = alpha, expires -- the pulse multiplies the base alpha (see Tick)
 		if expires and expires > GetTime() then
+			local text = btn.cwBuffTexts[shown]
+			text.cwShown = nil
+			text:SetText(ceil(expires - GetTime()))
+			text:Show()
 			tex.cwPhase = tex.cwPhase or 0 -- kept across repaints so an aura event does not restart the pulse
 			tex:SetAlpha(alpha * self.FlashAlpha(tex.cwPhase))
 		else
@@ -795,9 +868,17 @@ function Buffs:Paint(btn)
 		-- Skipped when a pick above replaces it anyway (same exclusive slot).
 		for _, key in ipairs(btn.cwDones or NONE) do
 			local done = info[key]
-			if expiring[key] and shown < MAX_ICONS and not (done.slot and slotTaken[done.slot]) then
+			if (expiring[key] or done.ownOnly) and shown < MAX_ICONS and not (done.slot and slotTaken[done.slot]) then
 				if done.slot then slotTaken[done.slot] = true end
 				show(done, base, greyed, expiring[key])
+			end
+		end
+
+		-- The player's one-target buffs (Beacon of Light) are shown wherever they are up, rule or not, so it is
+		-- always visible who holds them; the pulse and countdown start inside the warning window.
+		for _, key in ipairs(ownKeys) do
+			if shown < MAX_ICONS and state[key] == MINE and not (ruleSet and ruleSet[key]) then
+				show(info[key], base, greyed, expiring[key])
 			end
 		end
 
@@ -856,6 +937,7 @@ function Buffs:Tick(btn, now, dt)
 		if expires then
 			local left = expires - now
 			if left > 0 then
+				btn.cwBuffTexts[i]:SetText(ceil(left))
 				tex.cwPhase = (tex.cwPhase + dt / self.FlashPeriod(left, warnSeconds)) % 1
 				tex:SetAlpha(tex.cwBase * self.FlashAlpha(tex.cwPhase))
 			else

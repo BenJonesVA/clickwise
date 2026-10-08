@@ -121,6 +121,8 @@ L["Your class has no buff spells Clickwise can track yet."] = true
 
 -- Personal buffs (only on yourself)
 L["%s (only on you)"] = true
+L["%s (your own cast)"] = true
+L["Beacon of Light"] = true
 L["Armor"] = true
 L["Aspect"] = true
 L["Bone Shield"] = true
@@ -365,6 +367,10 @@ L["unit has buff"] = true
 L["unit has debuff"] = true
 L["unit has debuff type"] = true
 L["unit has my buff"] = true
+L["unit has an assigned buff"] = true
+L["unit has buff from someone else"] = true
+L["from anyone"] = true
+L["cast by me"] = true
 L["unit is dead"] = true
 L["unit is me"] = true
 L["unit's class is"] = true

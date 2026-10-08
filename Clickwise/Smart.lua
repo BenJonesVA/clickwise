@@ -133,6 +133,28 @@ Smart.CONDITIONS = {
 		test = function(_, unit, arg) return HasAura(unit, "HARMFUL", function(name) return SameName(name, arg) end) end},
 	{key = "buff", kind = "volatile", arg = "text", text = L["unit has buff"],
 		test = function(_, unit, arg) return HasAura(unit, "HELPFUL", function(name) return SameName(name, arg) end) end},
+	-- A buff by this name that the player did NOT cast (another paladin's Devotion Aura on you, a priest's Fortitude...).
+	-- With "unit has my buff" this makes the aura fallback buildable by hand: IF unit has buff from others Devotion Aura
+	-- THEN Concentration Aura. An aura with no resolvable caster counts as someone else's, as everywhere in Buffs.lua.
+	{key = "otherbuff", kind = "volatile", arg = "text", text = L["unit has buff from someone else"],
+		test = function(_, unit, arg)
+			return HasAura(unit, "HELPFUL", function(name, _, caster) return SameName(name, arg) and caster ~= "player" end)
+		end},
+	-- Every buff the Assignments tab gives this unit (its rule: the unit's role, class... see Buffs.lua) is up on it, i.e.
+-- none is still missing; so NOT this = something assigned is missing.
+	-- Reads the frame's own buff scan (re-run here, so it does not depend on which aura flush ran first).
+	{key = "assignedbuff", kind = "volatile", arg = "choice", text = L["unit has an assigned buff"],
+		choices = {{value = "any", label = L["from anyone"]}, {value = "mine", label = L["cast by me"]}},
+		test = function(btn, unit, arg)
+			local rule, state = btn and btn.cwRule, btn and btn.cwBuffState
+			if not (rule and state) then return false end
+			CW.Buffs:Scan(btn)
+			-- All of them: true only when the walk finds nothing missing (an entry someone else provides, or an
+			-- alternative sharing a slot, is not missing). "cast by me" also needs at least one the player gave.
+			if not btn.cwTodo or #btn.cwTodo > 0 then return false end
+			if arg == "mine" then return btn.cwDones ~= nil and #btn.cwDones > 0 end
+			return true
+		end},
 	{key = "mybuff", kind = "volatile", arg = "text", text = L["unit has my buff"],
 		test = function(_, unit, arg)
 			return HasAura(unit, "HELPFUL", function(name, _, caster) return SameName(name, arg) and caster == "player" end)

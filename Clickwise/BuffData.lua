@@ -27,6 +27,14 @@
 -- that excludes itself (one seal, one armor, one aspect at a time): any spell of it up counts as done and the
 -- priority order picks which one a click casts.
 --
+-- ownOnly = true on a group: a buff that goes on ONE target per caster (Beacon of Light). Only auras the player
+-- cast count, because every paladin can have a beacon up on the same unit and another paladin's does not mean
+-- yours is there. Unlike selfOnly it can go on anyone. It is never reminded as MISSING on every frame (only where an
+-- assignment rule names it, e.g. Tanks), but wherever the player's own is UP it is drawn, with a countdown once it is
+-- inside the expiry warning window. Switching the group off in the Buffs tab hides all of that.
+-- [belief] the beacon is NOT moved to the new target by a recast being refused, so a second unit matching the
+-- same rule shows it missing while the first holds it; the addon cannot tell which one the player means.
+--
 -- toggle = true on a group: casting the spell again while it is up may CANCEL it (auras, aspects, forms,
 -- Righteous Fury). The Assigned buff click never casts such a group while it is up, and it gives no expiry
 -- warning (there is nothing a click could refresh). [belief] which spells toggle is game knowledge; guessing
@@ -95,6 +103,11 @@ CW.BuffGroups = {
 	}},
 	{key = "THORNS", label = L["Thorns"], defaultOn = false, spells = {
 		{id = 467, name = "Thorns"},
+	}},
+
+	-- Beacon of Light: one target per paladin (see ownOnly above).
+	{key = "BEACON", label = L["Beacon of Light"], ownOnly = true, spells = {
+		{id = 53563, name = "Beacon of Light"},
 	}},
 
 	-- Personal buffs (see selfOnly / toggle above).

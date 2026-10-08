@@ -65,7 +65,7 @@ local defaults = {
 			important = true, -- named important debuffs (Debuffs.IMPORTANT + the player's own `watch` list) come first
 			watch = {},       -- the player's own important debuff names, highest priority first (/cw watch)
 		},
-		-- active defensives (Defensives.lua): the cooldowns that are up on a unit, in the middle of its frame
+		-- active defensives (Defensives.lua): the cooldowns that are up on a unit, small along the bottom of its frame
 		defensives = {
 			enabled = true,
 		},
