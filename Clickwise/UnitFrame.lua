@@ -289,6 +289,12 @@ function UnitFrame:ShowTooltip(btn)
 	if #lines > 0 then GameTooltip:Show() end -- shown again so the frame grows to fit the added lines
 end
 
+-- Blizzard re-anchors the tooltip to its default place whenever it refreshes it (UnitFrame_UpdateTooltip, other addons'
+-- hooks), which undoes the dragged position: re-apply ours after every default anchoring done for the hovered button.
+hooksecurefunc("GameTooltip_SetDefaultAnchor", function(tooltip, parent)
+	if tooltip == GameTooltip and parent and parent == hovered then UnitFrame:AnchorTooltip() end
+end)
+
 function UnitFrame:HideTooltip(btn)
 	if hovered == btn then hovered = nil end
 	if btn.cwFakeUnit then GameTooltip:Hide() else UnitFrame_OnLeave(btn) end
