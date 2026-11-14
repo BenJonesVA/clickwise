@@ -114,6 +114,7 @@ L["Spirit"] = true
 L["Stamina"] = true
 L["Strength and agility"] = true
 L["Thorns"] = true
+L["Power Word: Shield"] = true
 L["To cast a buff with a click, add a binding in the Bindings tab with the action 'Buff group'."] = true
 L["Up"] = true
 L["You do not know a spell of this group - the binding will do nothing until you do."] = true

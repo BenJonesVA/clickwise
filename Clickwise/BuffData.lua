@@ -104,6 +104,14 @@ CW.BuffGroups = {
 	{key = "THORNS", label = L["Thorns"], defaultOn = false, spells = {
 		{id = 467, name = "Thorns"},
 	}},
+	-- defaultOn = false: unlike Fortitude, Shield is not meant to sit on everyone, so it is off as a
+	-- blanket "missing" icon on every frame and is meant to be handed out via an Assignments rule
+	-- (e.g. Tanks) instead. Weakened Soul is not modeled: while it is up, a click is simply refused
+	-- by the game (not the "more powerful spell" message BOUNCE_TEXT catches), so the icon can read
+	-- "missing" for a few seconds after a shield fades.
+	{key = "SHIELD", label = L["Power Word: Shield"], defaultOn = false, spells = {
+		{id = 17, name = "Power Word: Shield"},
+	}},
 
 	-- Beacon of Light: one target per paladin (see ownOnly above).
 	{key = "BEACON", label = L["Beacon of Light"], ownOnly = true, spells = {
